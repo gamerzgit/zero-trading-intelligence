@@ -11,8 +11,9 @@ from datetime import datetime, timedelta
 from typing import Optional
 import json
 
-# Add project root to path
-project_root = os.path.join(os.path.dirname(__file__), '..')
+# Add project root to path (handle both Windows and Unix paths)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(script_dir, '..'))
 sys.path.insert(0, project_root)
 
 try:
@@ -29,8 +30,16 @@ except ImportError as e:
     sys.exit(1)
 
 # Load environment variables
-from dotenv import load_dotenv
-load_dotenv(os.path.join(project_root, '.env'))
+try:
+    from dotenv import load_dotenv
+    env_path = os.path.join(project_root, '.env')
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+    else:
+        print(f"⚠️  Warning: .env file not found at {env_path}")
+        print("   Using system environment variables only")
+except ImportError:
+    print("⚠️  Warning: python-dotenv not installed. Using system environment variables only")
 
 
 class SystemVerifier:

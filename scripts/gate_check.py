@@ -151,9 +151,10 @@ class GateKeeper:
                 return False, f"DB error: {error_msg[:100]}"
     
     async def check_data_flow(self) -> Tuple[bool, str, int]:
-        """Check if data is flowing (recent ticks in last hour)"""
+        """Check if Friday's market data exists (verifies ingestion works)"""
         try:
             import asyncpg
+            from datetime import date, timedelta
             
             conn = await asyncpg.connect(
                 host=self.db_host,
@@ -164,29 +165,95 @@ class GateKeeper:
                 timeout=5
             )
             
-            # Count ticks in last hour
-            count = await conn.fetchval(
+            # Find last Friday (most recent trading day)
+            today = date.today()
+            # Go back up to 7 days to find a Friday
+            friday_date = None
+            for i in range(7):
+                check_date = today - timedelta(days=i)
+                if check_date.weekday() == 4:  # Friday
+                    friday_date = check_date
+                    break
+            
+            if not friday_date:
+                # Fallback: use most recent weekday
+                for i in range(7):
+                    check_date = today - timedelta(days=i)
+                    if check_date.weekday() < 5:  # Monday-Friday
+                        friday_date = check_date
+                        break
+            
+            if not friday_date:
+                return False, "Could not determine last trading day", 0
+            
+            # Check for ticks from Friday
+            ticks_count = await conn.fetchval(
                 """
                 SELECT count(*) 
                 FROM ticks 
-                WHERE created_at > NOW() - INTERVAL '1 hour'
+                WHERE DATE(created_at AT TIME ZONE 'UTC') = $1
+                """,
+                friday_date
+            )
+            
+            # Check for candles_1m from Friday
+            candles_count = await conn.fetchval(
                 """
+                SELECT count(*) 
+                FROM candles_1m 
+                WHERE DATE(time AT TIME ZONE 'UTC') = $1
+                """,
+                friday_date
+            )
+            
+            # Check for SPY specifically (should have data)
+            spy_candles = await conn.fetchval(
+                """
+                SELECT count(*) 
+                FROM candles_1m 
+                WHERE ticker = 'SPY' 
+                AND DATE(time AT TIME ZONE 'UTC') = $1
+                """,
+                friday_date
+            )
+            
+            # Get SPY close price from Friday (verify ~$694)
+            spy_close = await conn.fetchval(
+                """
+                SELECT close 
+                FROM candles_1m 
+                WHERE ticker = 'SPY' 
+                AND DATE(time AT TIME ZONE 'UTC') = $1
+                ORDER BY time DESC 
+                LIMIT 1
+                """,
+                friday_date
             )
             
             await conn.close()
             
-            if count > 0:
-                return True, f"Data flowing: {count} ticks in last hour", count
+            # Build result message
+            if candles_count > 0:
+                msg = f"Friday {friday_date}: {candles_count} candles, {ticks_count} ticks"
+                if spy_candles > 0:
+                    msg += f", SPY: {spy_candles} candles"
+                    if spy_close:
+                        msg += f" (close: ${spy_close:.2f})"
+                        # Verify close is around $694
+                        if 690 <= spy_close <= 700:
+                            msg += " ✅"
+                        else:
+                            msg += f" (expected ~$694)"
+                return True, msg, candles_count
             else:
-                # This is a WARN, not a FAIL (market might be closed)
-                return False, "No recent data (0 ticks in last hour - verify market hours)", 0
+                return False, f"No data found for {friday_date} (ingestion may not have run)", 0
                 
         except ImportError:
             return False, "asyncpg not installed", 0
         except Exception as e:
             error_msg = str(e)
             if "does not exist" in error_msg.lower():
-                return False, "ticks table does not exist", 0
+                return False, "ticks or candles_1m table does not exist", 0
             else:
                 return False, f"Data flow check error: {error_msg[:100]}", 0
     
@@ -251,16 +318,16 @@ class GateKeeper:
         print(f"      {redis_msg}")
         print()
         
-        # Data Flow Check
+        # Data Flow Check (Friday's data)
         data_ok, data_msg, data_count = self.results.get('data_flow', (False, "Not checked", 0))
         if data_ok:
             status = "[PASS]"
         elif data_count == 0:
-            status = "[WARN]"
+            status = "[FAIL]"
         else:
             status = "[FAIL]"
         
-        print(f"{status} Recent Data Flow")
+        print(f"{status} Data Flow (Friday's Market Data)")
         print(f"      {data_msg}")
         print()
         
@@ -271,14 +338,17 @@ class GateKeeper:
         critical_passed = all(self.results.get(k, (False, ""))[0] for k in critical_checks)
         data_warn = not data_ok and data_count == 0  # WARN if no data but not critical
         
-        if critical_passed and (data_ok or data_warn):
+        if critical_passed and data_ok:
             print("\n✅ GATE PASSED: Ready for Milestone 2")
-            if data_warn:
-                print("   ⚠️  Note: No recent data (market may be closed)")
+            print("   ✅ Infrastructure verified")
+            print("   ✅ Database schema verified")
+            print("   ✅ Friday's market data verified")
             return True
         else:
             print("\n❌ GATE FAILED: Fix issues before Milestone 2")
             failed = [k for k in critical_checks if not self.results.get(k, (False, ""))[0]]
+            if not data_ok:
+                failed.append('data_flow')
             if failed:
                 print(f"   Critical failures: {', '.join(failed)}")
             return False

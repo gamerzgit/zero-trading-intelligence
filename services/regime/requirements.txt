@@ -1,0 +1,10 @@
+pandas-market-calendars>=4.3.0
+pytz>=2023.3
+asyncpg>=0.29.0
+redis[hiredis]>=5.0.0
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+alpaca-py>=0.20.0
+python-dotenv>=1.0.0
+

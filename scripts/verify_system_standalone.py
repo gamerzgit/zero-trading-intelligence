@@ -8,7 +8,7 @@ Tests code logic and Alpaca API without requiring Docker services
 import asyncio
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time as dt_time, date
 from typing import Optional
 import json
 
@@ -698,22 +698,48 @@ class StandaloneVerifier:
             # Test market hours detection (only if calculator instantiated)
             import pytz
             ET = pytz.timezone('America/New_York')
-            now_et = datetime.now(ET)
+            
+            # Use Friday for testing (market was open)
+            today = date.today()
+            # Find last Friday
+            friday_date = None
+            for i in range(7):
+                check_date = today - timedelta(days=i)
+                if check_date.weekday() == 4:  # Friday
+                    friday_date = check_date
+                    break
+            
+            if not friday_date:
+                # Fallback: use most recent weekday
+                for i in range(7):
+                    check_date = today - timedelta(days=i)
+                    if check_date.weekday() < 5:  # Monday-Friday
+                        friday_date = check_date
+                        break
+            
+            # Use Friday 2:00 PM ET (Prime Window) for testing
+            if friday_date:
+                test_time_et = ET.localize(datetime.combine(friday_date, dt_time(14, 0)))  # 2 PM ET
+                print(f"📅 Using Friday {friday_date} 14:00 ET for testing (Prime Window)")
+            else:
+                test_time_et = datetime.now(ET)
+                print("⚠️  Using current time for testing (Friday not found)")
             
             if calculator:
-                session_bounds = calculator.get_today_session_bounds(now_et)
+                # Test with Friday's session
+                session_bounds = calculator.get_today_session_bounds(test_time_et)
                 if session_bounds:
                     open_dt, close_dt = session_bounds
                     print(f"✅ Market hours detection: Open {open_dt.strftime('%H:%M')} ET, Close {close_dt.strftime('%H:%M')} ET")
                 else:
-                    print("⚠️  Market closed today (weekend/holiday) - this is OK")
+                    print("⚠️  Market closed on test date - this is OK")
                 
-                is_open = calculator.is_open_now(now_et)
-                print(f"✅ Market open check: {is_open}")
+                is_open = calculator.is_open_now(test_time_et)
+                print(f"✅ Market open check (Friday 14:00 ET): {is_open}")
                 
-                # Test time regime detection
-                time_regime, time_reason = calculator.get_time_regime(now_et)
-                print(f"✅ Time regime: {time_regime} ({time_reason})")
+                # Test time regime detection (should be PRIME_WINDOW at 2 PM)
+                time_regime, time_reason = calculator.get_time_regime(test_time_et)
+                print(f"✅ Time regime (Friday 14:00 ET): {time_regime} ({time_reason})")
                 
                 # Test volatility zone classification
                 vol_zone, vol_reason = calculator.get_volatility_zone(16.5, "VIXY_PROXY")
@@ -722,18 +748,30 @@ class StandaloneVerifier:
                 vol_zone_high, vol_reason_high = calculator.get_volatility_zone(26.0, "VIXY_PROXY")
                 print(f"✅ Volatility zone (VIX=26.0): {vol_zone_high} ({vol_reason_high})")
                 
-                # Test market state calculation
+                # Test market state calculation (Friday 2 PM + low VIX = should be GREEN)
                 state, reason = calculator.calculate_market_state(
-                    now_et=now_et,
+                    now_et=test_time_et,
                     vix_level=16.5,
                     vix_source="VIXY_PROXY",
                     event_risk=False
                 )
-                print(f"✅ Market state calculation: {state} - {reason}")
+                print(f"✅ Market state calculation (Friday 14:00 ET, VIX=16.5): {state} - {reason}")
+                
+                # Test Sunday scenario (should be RED)
+                sunday_time = datetime.now(ET)
+                if sunday_time.weekday() == 6:  # Sunday
+                    sunday_state, sunday_reason = calculator.calculate_market_state(
+                        now_et=sunday_time,
+                        vix_level=16.5,
+                        vix_source="VIXY_PROXY",
+                        event_risk=False
+                    )
+                    print(f"✅ Weekend detection (Sunday): {sunday_state} - {sunday_reason}")
             else:
                 # Use mock values for schema tests if calculator not available
                 state = "GREEN"
                 reason = "Prime Window"
+                test_time_et = datetime.now(ET)
                 print("⚠️  Skipping logic tests (pandas-market-calendars needed)")
                 print("   Code structure validated - dependency will be installed on Jetson")
             
@@ -747,7 +785,7 @@ class StandaloneVerifier:
                 state=state,
                 vix_level=16.5,
                 reason=reason,
-                timestamp=now_et
+                timestamp=test_time_et
             )
             print(f"✅ MarketState schema works: {market_state.state} @ {market_state.vix_level}")
             
@@ -756,7 +794,7 @@ class StandaloneVerifier:
             notification = StateChangeNotification(
                 changed_fields=["state", "reason"],
                 state_key="key:market_state",
-                timestamp=now_et
+                timestamp=test_time_et
             )
             print(f"✅ StateChangeNotification schema works: {len(notification.changed_fields)} fields changed")
             

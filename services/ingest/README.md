@@ -78,5 +78,7 @@ To add new provider:
 
 If implementing tick/second-level data in the future:
 - **MUST** handle `ingest_seq` column to ensure unique Primary Keys `(ticker, time, ingest_seq)`
-- Required for high-frequency data to prevent collisions
+- Required for high-frequency data to prevent collisions when multiple ticks share the same timestamp
+- The `ingest_seq` is auto-incrementing (BIGSERIAL) and must be included in the INSERT statement
+- Example: `INSERT INTO ticks (ticker, time, price, volume, ingest_seq, ...) VALUES (...)`
 

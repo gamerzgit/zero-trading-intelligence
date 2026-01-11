@@ -2,17 +2,72 @@
 Redis Event Publisher for Market Data
 """
 
+import sys
+import os
+# Add project root to path for contracts
+project_root = os.path.join(os.path.dirname(__file__), '../../../')
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 try:
     import redis.asyncio as aioredis
 except ImportError:
     # Fallback for older redis versions
     import aioredis
-import json
+
 from typing import Optional
 from datetime import datetime
 
 from ..provider.base import Candle
-from contracts.schemas import TickerUpdate, IndexUpdate, VolatilityUpdate
+
+# Import schemas
+try:
+    from contracts.schemas import TickerUpdate, IndexUpdate, VolatilityUpdate
+except ImportError:
+    # Fallback if contracts not available - create minimal schemas
+    from pydantic import BaseModel
+    from datetime import datetime as dt
+    
+    class TickerUpdate(BaseModel):
+        schema_version: str = "1.0"
+        timestamp: dt = None
+        ticker: str = ""
+        price: float = 0.0
+        volume: int = 0
+        time: dt = None
+        bid: Optional[float] = None
+        ask: Optional[float] = None
+        spread: Optional[float] = None
+        
+        def __init__(self, **data):
+            if 'timestamp' not in data:
+                data['timestamp'] = dt.utcnow()
+            super().__init__(**data)
+    
+    class IndexUpdate(BaseModel):
+        schema_version: str = "1.0"
+        timestamp: dt = None
+        index: str = ""
+        price: float = 0.0
+        volume: int = 0
+        time: dt = None
+        
+        def __init__(self, **data):
+            if 'timestamp' not in data:
+                data['timestamp'] = dt.utcnow()
+            super().__init__(**data)
+    
+    class VolatilityUpdate(BaseModel):
+        schema_version: str = "1.0"
+        timestamp: dt = None
+        vix_level: float = 0.0
+        vix_roc: Optional[float] = None
+        time: dt = None
+        
+        def __init__(self, **data):
+            if 'timestamp' not in data:
+                data['timestamp'] = dt.utcnow()
+            super().__init__(**data)
 
 
 class RedisPublisher:
@@ -72,4 +127,3 @@ class RedisPublisher:
         
         payload = update.model_dump_json()
         await self.client.publish("chan:volatility_update", payload.encode('utf-8'))
-

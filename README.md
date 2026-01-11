@@ -1,6 +1,6 @@
 # ZERO Trading Intelligence Platform
 
-**Version:** Milestone 0 (Architecture & Contracts)  
+**Version:** Milestone 2 (Regime Engine)  
 **Last Updated:** 2026-01-11
 
 A probabilistic market intelligence platform (Decision Support System) running on NVIDIA Jetson Orin AGX.
@@ -27,7 +27,7 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 - ✅ Regime-conditioned
 - ✅ Self-learning (truth test loop)
 
-**Note:** Milestone 0 only includes infrastructure + frozen contracts. No scanning/ranking occurs yet.
+**Note:** Milestones 0-2 complete. Level 0 (Market Permission/Veto) is operational. Scanner and ranking engines coming in future milestones.
 
 ---
 
@@ -43,7 +43,7 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 
 ### Milestone 1: Price Ingestion ✅ COMPLETE
 - ✅ `zero-ingest-price` service implemented
-- ✅ Provider abstraction (Mock + Polygon)
+- ✅ Provider abstraction (Mock + Polygon + Alpaca)
 - ✅ Database writers (1m, 5m, 1d candles)
 - ✅ Redis event publishing
 - ✅ Health endpoint (`/health`)
@@ -52,9 +52,22 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 
 **Current Symbols:** SPY, QQQ, IWM, AAPL, MSFT
 
+### Milestone 2: Regime Engine (Level 0) ✅ COMPLETE
+- ✅ `zero-regime` service implemented
+- ✅ NYSE market hours detection (pandas-market-calendars)
+- ✅ Time window classification (OPENING, LUNCH, PRIME_WINDOW, CLOSING)
+- ✅ Volatility zones (GREEN/YELLOW/RED based on VIX/VIXY)
+- ✅ Market state calculation (GREEN/YELLOW/RED veto logic)
+- ✅ Redis state storage (`key:market_state`)
+- ✅ State change notifications (`chan:market_state_changed`)
+- ✅ Database persistence (`regime_log` table)
+- ✅ Health endpoint (`/health` on port 8000)
+- ✅ Weekend/holiday detection (automatic RED/Halt)
+
 **What's NOT Included (Future Milestones):**
-- ❌ Intelligence engines (regime, scanner, ranking)
-- ❌ Business logic
+- ❌ Scanner engine (Level 2)
+- ❌ Opportunity ranking (Level 3)
+- ❌ Attention/Narrative engine (Level 1)
 - ❌ Trading execution
 
 ---
@@ -149,12 +162,33 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
    # SELECT ticker, MAX(time) FROM candles_1m GROUP BY ticker;
    ```
 
-9. **Run Comprehensive Verification Script**
+9. **Verify Regime Engine Service (Milestone 2)**
+   ```bash
+   # Check service status
+   make status
+   
+   # Check health endpoint
+   curl http://localhost:8000/health
+   
+   # Check logs
+   docker compose -f infra/docker-compose.yml logs zero-regime
+   
+   # Verify regime state in Redis
+   make redis-cli
+   # In redis-cli:
+   # GET key:market_state
+   # PUBSUB CHANNELS chan:*
+   ```
+
+10. **Run Comprehensive Verification Script**
    ```bash
    # Install verification script dependencies
    pip install -r scripts/requirements.txt
    
-   # Run verification (checks infrastructure, Alpaca API, data persistence, Redis)
+   # Run standalone verification (Windows/local - no Docker required)
+   python scripts/verify_system_standalone.py
+   
+   # Run full system verification (requires Docker services running)
    python scripts/verify_system.py
    ```
    
@@ -184,7 +218,9 @@ zero-trading-intelligence/
 │   │   └── init.sql       # Database initialization
 │   └── grafana/
 │       └── provisioning/  # Grafana auto-config
-├── services/              # Service placeholders (empty for M0)
+├── services/              # Microservices
+│   ├── ingest/            # Price ingestion service (M1)
+│   └── regime/            # Regime engine service (M2)
 ├── scripts/               # Utility scripts
 ├── data_nvme/             # Data storage (gitignored)
 ├── .env.example           # Environment template
@@ -395,17 +431,76 @@ PUBSUB CHANNELS chan:*
 # Should show: chan:ticker_update, chan:index_update
 ```
 
+### Milestone 2 Validation (Regime Engine)
+
+**Check Regime Service:**
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Expected response:
+# {
+#   "service": "zero-regime",
+#   "status": "healthy",
+#   "market_state": {
+#     "state": "GREEN" | "YELLOW" | "RED",
+#     "vix_level": 16.5,
+#     "reason": "Prime Window",
+#     "timestamp": "2026-01-11T14:00:00-05:00"
+#   }
+# }
+```
+
+**Verify Regime State in Redis:**
+```bash
+make redis-cli
+```
+
+In redis-cli:
+```redis
+# Get current market state
+GET key:market_state
+
+# Check state change channel
+PUBSUB CHANNELS chan:*
+# Should show: chan:market_state_changed
+```
+
+**Verify Regime Log in Database:**
+```bash
+make psql
+```
+
+In psql:
+```sql
+-- Check regime log entries
+SELECT state, reason, vix_level, created_at
+FROM regime_log
+ORDER BY created_at DESC
+LIMIT 10;
+
+-- Check state distribution
+SELECT state, COUNT(*) as count
+FROM regime_log
+GROUP BY state;
+```
+
 ### Ports Used
 
 - **TimescaleDB:** 5432
 - **Redis:** 6379
 - **Grafana:** 3000
+- **Ingestion Service:** 8080
+- **Regime Engine Service:** 8000
 
-### Health Checks (if services expose /health endpoints)
+### Health Checks
 
 ```bash
-# Example (when services are implemented):
-curl http://<jetson-ip>:8080/health
+# Ingestion service
+curl http://localhost:8080/health
+
+# Regime engine service
+curl http://localhost:8000/health
 ```
 
 ---
@@ -470,11 +565,12 @@ chmod -R 755 data_nvme/
 
 ## 🚧 Next Steps (Future Milestones)
 
-- **Milestone 1:** Price ingestion service
-- **Milestone 2:** Regime engine (Level 0)
-- **Milestone 3:** Scanner (Level 2)
-- **Milestone 4:** Core logic (Level 3)
-- **Milestone 5:** Narrative LLM (Level 1)
+- ✅ **Milestone 0:** Architecture & Contracts
+- ✅ **Milestone 1:** Price ingestion service
+- ✅ **Milestone 2:** Regime engine (Level 0)
+- **Milestone 3:** Scanner (Level 2) - Opportunity Discovery
+- **Milestone 4:** Core logic (Level 3) - Opportunity Ranking
+- **Milestone 5:** Narrative LLM (Level 1) - Attention & Narrative
 - **Milestone 6:** Truth test & learning loop
 
 ---

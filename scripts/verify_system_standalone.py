@@ -648,7 +648,7 @@ class StandaloneVerifier:
                 ticker="SPY",
                 price=450.5,
                 volume=1000000,
-                time=datetime.utcnow()
+                time=datetime.now(timezone.utc)
             )
             print(f"✅ TickerUpdate schema works: {update.ticker} @ ${update.price}")
             

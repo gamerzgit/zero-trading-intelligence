@@ -16,24 +16,36 @@
 
 ---
 
-## PUBSUB CHANNELS (Change Notifications Only)
+## PUBSUB CHANNELS
 
-### Price & Market Data
+**IMPORTANT:** Channels serve two distinct purposes:
+1. **MARKET DATA STREAMS** - Full payloads (ticker/index/vol/news/events)
+2. **STATE CHANGE NOTIFICATIONS** - Notifications only (not full state payloads)
+
+---
+
+### MARKET DATA STREAMS (Full Payloads)
+
+These channels publish complete data payloads for real-time market data ingestion.
+
+#### Price & Market Data
 
 | Channel Name | Type | Publisher | Subscribers | Payload Structure |
 |-------------|------|-----------|-------------|-------------------|
-| `chan:ticker_update` | PubSub | zero-ingest-price | zero-scanner, zero-core-logic | `TickerUpdate` (see schemas.py) |
-| `chan:index_update` | PubSub | zero-ingest-price | zero-regime, zero-attention | `IndexUpdate` (see schemas.py) |
-| `chan:volatility_update` | PubSub | zero-ingest-price | zero-regime | `VolatilityUpdate` (see schemas.py) |
+| `chan:ticker_update` | PubSub | zero-ingest-price | zero-scanner, zero-core-logic | `TickerUpdate` (see schemas.py) - **FULL PAYLOAD** |
+| `chan:index_update` | PubSub | zero-ingest-price | zero-regime, zero-attention | `IndexUpdate` (see schemas.py) - **FULL PAYLOAD** |
+| `chan:volatility_update` | PubSub | zero-ingest-price | zero-regime | `VolatilityUpdate` (see schemas.py) - **FULL PAYLOAD** |
 
-### News & Events
+#### News & Events
 
 | Channel Name | Type | Publisher | Subscribers | Payload Structure |
 |-------------|------|-----------|-------------|-------------------|
-| `chan:news_raw` | PubSub | zero-ingest-news | zero-narrative-llm | `NewsRaw` (see schemas.py) |
-| `chan:event_alert` | PubSub | zero-ingest-news | zero-regime, zero-urgency | `EventAlert` (see schemas.py) |
+| `chan:news_raw` | PubSub | zero-ingest-news | zero-narrative-llm | `NewsRaw` (see schemas.py) - **FULL PAYLOAD** |
+| `chan:event_alert` | PubSub | zero-ingest-news | zero-regime, zero-urgency | `EventAlert` (see schemas.py) - **FULL PAYLOAD** |
 
-### State Change Notifications (NOT Full State)
+---
+
+### STATE CHANGE NOTIFICATIONS (Notifications Only - NOT Full State)
 
 | Channel Name | Type | Publisher | Subscribers | Payload Structure |
 |-------------|------|-----------|-------------|-------------------|
@@ -41,7 +53,7 @@
 | `chan:attention_state_changed` | PubSub | zero-attention | zero-core-logic, zero-urgency | `StateChangeNotification` (see schemas.py) |
 | `chan:narrative_state_changed` | PubSub | zero-narrative-llm | zero-core-logic | `StateChangeNotification` (see schemas.py) |
 
-**StateChangeNotification Payload:**
+**StateChangeNotification Payload (NOT full state):**
 ```json
 {
   "schema_version": "1.0",
@@ -51,7 +63,11 @@
 }
 ```
 
-### Opportunity Discovery
+**Subscribers must fetch full state from Redis key-value store using `state_key`.**
+
+---
+
+### OPPORTUNITY DISCOVERY (Internal Data Streams)
 
 | Channel Name | Type | Publisher | Subscribers | Payload Structure |
 |-------------|------|-----------|-------------|-------------------|

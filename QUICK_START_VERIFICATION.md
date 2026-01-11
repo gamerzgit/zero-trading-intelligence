@@ -13,7 +13,7 @@ pip install -r scripts/requirements.txt
 Edit your `.env` file (create from `.env.example` if needed):
 
 ```bash
-# Add your Alpaca credentials (from ELVA or your Alpaca account)
+# Add your Alpaca credentials (from your Alpaca account)
 ALPACA_API_KEY=your_key_here
 ALPACA_SECRET_KEY=your_secret_here
 ALPACA_PAPER=true

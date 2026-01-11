@@ -365,7 +365,7 @@ class StandaloneVerifier:
                 print(f"   Price range: ${min(b.low for b in minute_bars['SPY']):.2f} - ${max(b.high for b in minute_bars['SPY']):.2f}")
                 print(f"   Total volume: {sum(b.volume for b in minute_bars['SPY']):,}")
                 print("   ✅ Data format compatible with ingestion service")
-                print("   ✅ Works exactly like ELVA and trading_ai (IEX feed)")
+                print("   ✅ Works with IEX feed (no SIP subscription required)")
                 print("   ✅ Ready to ingest real market data!")
             else:
                 print("⚠️  No minute bars returned for Friday")

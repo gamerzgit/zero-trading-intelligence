@@ -43,6 +43,8 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 - ✅ Docker Compose infrastructure
 - ✅ Grafana provisioning
 
+**Milestone 0 includes infrastructure + frozen contracts. No scanning/ranking occurs yet.**
+
 **What's NOT Included (Future Milestones):**
 - ❌ Service implementations (empty placeholders)
 - ❌ Market data ingestion

@@ -27,6 +27,8 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 - ✅ Regime-conditioned
 - ✅ Self-learning (truth test loop)
 
+**Note:** Milestone 0 only includes infrastructure + frozen contracts. No scanning/ranking occurs yet.
+
 ---
 
 ## 🏗️ Milestone 0 Status
@@ -61,6 +63,11 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
   - NVIDIA Container Toolkit
   - Make (optional, for convenience)
 
+**CRITICAL - Storage Location:**
+- Ensure `data_nvme/` is located on NVMe mount (example: `/mnt/nvme/zero/data_nvme`)
+- **Do NOT store DB volumes on eMMC** (will degrade hardware)
+- If using `./data_nvme` relative path, ensure the repository folder itself is on NVMe
+
 ### Setup Steps
 
 1. **Clone/Download Project**
@@ -70,22 +77,28 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
    cd zero-trading-intelligence
    ```
 
-2. **Configure Environment**
+2. **Set Jetson to MAXN Mode (CRITICAL)**
+   ```bash
+   sudo nvpmodel -m 0
+   sudo jetson_clocks  # Recommended but optional
+   ```
+
+3. **Configure Environment**
    ```bash
    cp .env.example .env
    nano .env  # Edit with your passwords
    ```
 
-3. **Create Data Directories**
+4. **Create Data Directories**
    ```bash
    mkdir -p data_nvme/{timescaledb,redis,grafana}
    ```
 
-4. **Start Services**
+5. **Start Services**
    ```bash
    make up
    # Or manually:
-   # docker-compose -f infra/docker-compose.yml up -d
+   # docker compose -f infra/docker-compose.yml up -d
    ```
 
 5. **Verify Services**
@@ -98,7 +111,8 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 6. **Access Grafana**
    - Open browser: `http://<jetson-ip>:3000`
    - Login: `admin` / `<GRAFANA_ADMIN_PASSWORD>`
-   - TimescaleDB datasource should be auto-configured
+   - Grafana datasource is auto-provisioned via `infra/grafana/provisioning/datasources/`
+   - TimescaleDB datasource should appear automatically
 
 7. **Validate Database**
    ```bash
@@ -149,7 +163,14 @@ make psql        # Connect to TimescaleDB
 make redis-cli   # Connect to Redis
 make restart     # Restart services
 make status      # Show service status
-make clean       # Remove all data (WARNING!)
+make clean       # Remove all data (WARNING! Deletes ./data_nvme - irreversible)
+```
+
+**Note:** Makefile uses `docker compose` (modern CLI). You can also use commands directly:
+```bash
+docker compose -f infra/docker-compose.yml up -d
+docker compose -f infra/docker-compose.yml ps
+docker compose -f infra/docker-compose.yml logs timescaledb
 ```
 
 ---
@@ -188,10 +209,12 @@ make clean       # Remove all data (WARNING!)
 - Channels: `chan:<name>`
 - Streams: `stream:<name>`
 
-**State Storage:**
-- State lives in Redis key-value stores
-- Pub/Sub channels emit change notifications only
-- Market data streams may publish full payloads
+**State Storage Rules (Contract):**
+- **State lives ONLY in Redis key-value stores** (`key:*`)
+- **Pub/Sub has two types of channels:**
+  1) **Event channels (full payload)** e.g. `chan:ticker_update`, `chan:news_raw`
+  2) **State-change notification channels (minimal payload)** e.g. `chan:*_state_changed` that reference the updated `key:*`
+- Grafana reads ONLY from TimescaleDB (never Redis)
 
 ---
 
@@ -204,8 +227,13 @@ make clean       # Remove all data (WARNING!)
 - Password: From `.env` (`GRAFANA_ADMIN_PASSWORD`)
 
 **Auto-Provisioned:**
-- TimescaleDB datasource
-- Dashboard provider (empty for M0)
+- TimescaleDB datasource (via `infra/grafana/provisioning/datasources/timescaledb.yml`)
+- Dashboard provider (via `infra/grafana/provisioning/dashboards/default.yml`)
+
+**Expected First-Run Behavior:**
+- TimescaleDB runs `init.sql`, creates hypertables + policies
+- Grafana provisions datasource automatically
+- No dashboards may appear yet (empty for M0)
 
 ---
 
@@ -225,11 +253,17 @@ In psql:
 -- Check hypertables
 SELECT * FROM timescaledb_information.hypertables;
 
--- Check retention policies
+-- Check all jobs (retention + compression)
+SELECT * FROM timescaledb_information.jobs;
+
+-- Check retention policies specifically
 SELECT * FROM timescaledb_information.jobs WHERE proc_name LIKE '%retention%';
 
--- Check compression policies
+-- Check compression policies specifically
 SELECT * FROM timescaledb_information.jobs WHERE proc_name LIKE '%compression%';
+
+-- Check compression settings
+SELECT * FROM timescaledb_information.compression_settings;
 
 -- Verify tables exist
 SELECT COUNT(*) FROM candles_1m;
@@ -252,10 +286,23 @@ KEYS *  # Should be empty (no data yet)
 
 ```bash
 make status
-docker-compose -f infra/docker-compose.yml ps
+docker compose -f infra/docker-compose.yml ps
 ```
 
 All services should show "Up" status.
+
+### Ports Used
+
+- **TimescaleDB:** 5432
+- **Redis:** 6379
+- **Grafana:** 3000
+
+### Health Checks (if services expose /health endpoints)
+
+```bash
+# Example (when services are implemented):
+curl http://<jetson-ip>:8080/health
+```
 
 ---
 
@@ -275,10 +322,10 @@ All services should show "Up" status.
 
 ```bash
 # Check if TimescaleDB is running
-docker-compose -f infra/docker-compose.yml ps timescaledb
+docker compose -f infra/docker-compose.yml ps timescaledb
 
 # Check logs
-docker-compose -f infra/docker-compose.yml logs timescaledb
+docker compose -f infra/docker-compose.yml logs timescaledb
 
 # Verify environment variables
 cat .env | grep POSTGRES
@@ -288,23 +335,23 @@ cat .env | grep POSTGRES
 
 ```bash
 # Check if Redis is running
-docker-compose -f infra/docker-compose.yml ps redis
+docker compose -f infra/docker-compose.yml ps redis
 
 # Check logs
-docker-compose -f infra/docker-compose.yml logs redis
+docker compose -f infra/docker-compose.yml logs redis
 ```
 
 ### Grafana Not Loading
 
 ```bash
 # Check if Grafana is running
-docker-compose -f infra/docker-compose.yml ps grafana
+docker compose -f infra/docker-compose.yml ps grafana
 
 # Check logs
-docker-compose -f infra/docker-compose.yml logs grafana
+docker compose -f infra/docker-compose.yml logs grafana
 
 # Verify datasource provisioning
-docker-compose -f infra/docker-compose.yml exec grafana ls -la /etc/grafana/provisioning/datasources
+docker compose -f infra/docker-compose.yml exec grafana ls -la /etc/grafana/provisioning/datasources
 ```
 
 ### Permission Errors (Data Directories)

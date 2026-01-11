@@ -149,6 +149,22 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
    # SELECT ticker, MAX(time) FROM candles_1m GROUP BY ticker;
    ```
 
+9. **Run Comprehensive Verification Script**
+   ```bash
+   # Install verification script dependencies
+   pip install -r scripts/requirements.txt
+   
+   # Run verification (checks infrastructure, Alpaca API, data persistence, Redis)
+   python scripts/verify_system.py
+   ```
+   
+   **Note:** Ensure your `.env` file contains Alpaca credentials:
+   ```bash
+   ALPACA_API_KEY=your_key_here
+   ALPACA_SECRET_KEY=your_secret_here
+   ALPACA_PAPER=true
+   ```
+
 ---
 
 ## 📁 Project Structure

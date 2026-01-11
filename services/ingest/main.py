@@ -61,6 +61,17 @@ class IngestionService:
             if not api_key:
                 raise ValueError("POLYGON_API_KEY required for polygon provider")
             self.provider = PolygonProvider(api_key)
+        elif self.provider_type == "alpaca":
+            api_key = os.getenv("ALPACA_API_KEY")
+            secret_key = os.getenv("ALPACA_SECRET_KEY")
+            paper = os.getenv("ALPACA_PAPER", "true").lower() == "true"
+            if not api_key or not secret_key:
+                raise ValueError("ALPACA_API_KEY and ALPACA_SECRET_KEY required for alpaca provider")
+            try:
+                from provider import AlpacaProvider
+                self.provider = AlpacaProvider(api_key, secret_key, paper)
+            except ImportError:
+                raise ImportError("alpaca-py not installed. Install with: pip install alpaca-py")
         else:
             self.provider = MockProvider(self.symbols)
         

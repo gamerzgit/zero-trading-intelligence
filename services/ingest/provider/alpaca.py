@@ -66,7 +66,8 @@ class AlpacaProvider(MarketDataProvider):
                         symbol_or_symbols=[symbol],
                         timeframe=TimeFrame.Minute,
                         start=fetch_start,
-                        end=fetch_end
+                        end=fetch_end,
+                        feed='iex'  # Use free IEX feed (no SIP subscription required)
                     )
                     
                     bars = self.client.get_stock_bars(request)

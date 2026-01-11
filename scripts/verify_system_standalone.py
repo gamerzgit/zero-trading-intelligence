@@ -202,33 +202,30 @@ class StandaloneVerifier:
             else:
                 print("⚠️  Daily bars: No data returned (market may be closed)")
             
-            # Test 2: Get minute bars for last trading day (test data format)
-            print("\nTest 4b: Fetching minute bars (last trading day)...")
-            # Get data from 2 days ago to avoid SIP requirement
-            end_time = datetime.utcnow() - timedelta(days=2)
-            start_time = end_time - timedelta(days=1)
+            # Test 2: Get minute bars using IEX feed (like ELVA and trading_ai do)
+            print("\nTest 4b: Fetching minute bars with IEX feed (like ELVA/trading_ai)...")
+            # Use IEX feed (free, no SIP required) - same way ELVA and trading_ai do it
+            end_time = datetime.utcnow()
+            start_time = end_time - timedelta(days=1)  # Last 24 hours
             
             request = StockBarsRequest(
                 symbol_or_symbols=["SPY"],
                 timeframe=TimeFrame.Minute,
                 start=start_time,
-                end=end_time
+                end=end_time,
+                feed='iex'  # Use free IEX feed (no SIP required)
             )
             
-            try:
-                minute_bars = client.get_stock_bars(request)
-                if minute_bars and "SPY" in minute_bars and len(minute_bars["SPY"]) > 0:
-                    print(f"✅ Minute bars: Retrieved {len(minute_bars['SPY'])} bars")
-                    print(f"   Sample: {minute_bars['SPY'][0].timestamp} @ ${minute_bars['SPY'][0].close:.2f}")
-                    print("   ✅ Data format compatible with ingestion service")
-                else:
-                    print("⚠️  Minute bars: No data (may require SIP subscription)")
-            except Exception as e:
-                if "SIP" in str(e) or "subscription" in str(e).lower():
-                    print("⚠️  Minute bars: SIP subscription required (expected for recent data)")
-                    print("   ✅ API connection works - will use older data or daily bars")
-                else:
-                    raise
+            minute_bars = client.get_stock_bars(request)
+            if minute_bars and "SPY" in minute_bars and len(minute_bars["SPY"]) > 0:
+                print(f"✅ Minute bars: Retrieved {len(minute_bars['SPY'])} bars")
+                latest = minute_bars["SPY"][-1]
+                print(f"   Latest: {latest.timestamp} @ ${latest.close:.2f}")
+                print("   ✅ Data format compatible with ingestion service")
+                print("   ✅ Works exactly like ELVA and trading_ai (IEX feed)")
+            else:
+                print("⚠️  Minute bars: No data (market may be closed)")
+                print("   ✅ API connection works - IEX feed accessible")
             
             print("\n✅ Alpaca API: Connection verified and data retrieval works")
             return True

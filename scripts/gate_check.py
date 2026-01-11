@@ -234,16 +234,19 @@ class GateKeeper:
             
             # Build result message
             if candles_count > 0:
-                msg = f"Friday {friday_date}: {candles_count} candles, {ticks_count} ticks"
+                msg = f"Friday {friday_date}: {candles_count} total candles, {ticks_count} ticks"
                 if spy_candles > 0:
-                    msg += f", SPY: {spy_candles} candles"
+                    msg += f"\n      SPY (test symbol): {spy_candles} candles"
                     if spy_close:
                         msg += f" (close: ${spy_close:.2f})"
                         # Verify close is around $694
                         if 690 <= spy_close <= 700:
-                            msg += " ✅"
+                            msg += " ✅ Verified"
                         else:
                             msg += f" (expected ~$694)"
+                    msg += "\n      System ingests: SPY, QQQ, IWM, AAPL, MSFT"
+                else:
+                    msg += f"\n      ⚠️  SPY data missing (test symbol)"
                 return True, msg, candles_count
             else:
                 return False, f"No data found for {friday_date} (ingestion may not have run)", 0

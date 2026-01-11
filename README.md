@@ -31,11 +31,9 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 
 ---
 
-## 🏗️ Milestone 0 Status
+## 🏗️ Milestone Status
 
-**Current Phase:** Architecture & Contracts (Frozen)
-
-**What's Included:**
+### Milestone 0: Architecture & Contracts ✅ COMPLETE
 - ✅ Database schema (TimescaleDB)
 - ✅ Redis contracts (keys, channels, streams)
 - ✅ Pydantic schemas (Python models)
@@ -43,13 +41,21 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 - ✅ Docker Compose infrastructure
 - ✅ Grafana provisioning
 
-**Milestone 0 includes infrastructure + frozen contracts. No scanning/ranking occurs yet.**
+### Milestone 1: Price Ingestion ✅ COMPLETE
+- ✅ `zero-ingest-price` service implemented
+- ✅ Provider abstraction (Mock + Polygon)
+- ✅ Database writers (1m, 5m, 1d candles)
+- ✅ Redis event publishing
+- ✅ Health endpoint (`/health`)
+- ✅ Gap detection and logging
+- ✅ Auto-aggregation (5m from 1m, 1d from 1m)
+
+**Current Symbols:** SPY, QQQ, IWM, AAPL, MSFT
 
 **What's NOT Included (Future Milestones):**
-- ❌ Service implementations (empty placeholders)
-- ❌ Market data ingestion
-- ❌ Intelligence engines
+- ❌ Intelligence engines (regime, scanner, ranking)
 - ❌ Business logic
+- ❌ Trading execution
 
 ---
 
@@ -123,6 +129,24 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
    # \dt  # List tables
    # SELECT * FROM timescaledb_information.hypertables;
    # \q   # Exit
+   ```
+
+8. **Verify Ingestion Service (Milestone 1)**
+   ```bash
+   # Check service status
+   make status
+   
+   # Check health endpoint
+   curl http://localhost:8080/health
+   
+   # Check logs
+   docker compose -f infra/docker-compose.yml logs zero-ingest-price
+   
+   # Verify data is being ingested
+   make psql
+   # In psql:
+   # SELECT COUNT(*) FROM candles_1m;
+   # SELECT ticker, MAX(time) FROM candles_1m GROUP BY ticker;
    ```
 
 ---
@@ -239,7 +263,9 @@ docker compose -f infra/docker-compose.yml logs timescaledb
 
 ---
 
-## 🔍 Validation (Milestone 0)
+## 🔍 Validation
+
+### Milestone 0 Validation
 
 ### Check Database Initialization
 
@@ -292,6 +318,66 @@ docker compose -f infra/docker-compose.yml ps
 ```
 
 All services should show "Up" status.
+
+### Milestone 1 Validation (Price Ingestion)
+
+**Check Ingestion Service:**
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Expected response:
+# {
+#   "service": "zero-ingest-price",
+#   "status": "healthy",
+#   "details": {
+#     "provider_connected": true,
+#     "database_connected": true,
+#     "redis_connected": true,
+#     "last_candles": {...}
+#   }
+# }
+```
+
+**Verify Data Ingestion:**
+```bash
+make psql
+```
+
+In psql:
+```sql
+-- Check 1-minute candles
+SELECT ticker, COUNT(*) as count, MIN(time) as first, MAX(time) as last
+FROM candles_1m
+GROUP BY ticker;
+
+-- Check 5-minute aggregation
+SELECT ticker, COUNT(*) as count
+FROM candles_5m
+GROUP BY ticker;
+
+-- Check daily aggregation
+SELECT ticker, COUNT(*) as count
+FROM candles_1d
+GROUP BY ticker;
+
+-- Check for gaps
+SELECT ticker, COUNT(*) as gap_count
+FROM ingest_gap_log
+WHERE backfilled = false
+GROUP BY ticker;
+```
+
+**Check Redis Events:**
+```bash
+make redis-cli
+```
+
+In redis-cli:
+```redis
+PUBSUB CHANNELS chan:*
+# Should show: chan:ticker_update, chan:index_update
+```
 
 ### Ports Used
 

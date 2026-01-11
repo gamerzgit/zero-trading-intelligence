@@ -66,21 +66,43 @@ services:
     networks:
       - zero-network
 
-  # Service placeholders (empty for Milestone 0)
-  # These will be implemented in later milestones
-  # zero-ingest-price:
-  #   build:
-  #     context: ..
-  #     dockerfile: services/ingest/Dockerfile
-  #   image: zero-ingest-price:latest
-  #   depends_on:
-  #     - timescaledb
-  #     - redis
-  #   environment:
-  #     - REDIS_HOST=redis
-  #     - DB_HOST=timescaledb
-  #   networks:
-  #     - zero-network
+  # Price Ingestion Service (Milestone 1)
+  zero-ingest-price:
+    build:
+      context: ..
+      dockerfile: services/ingest/Dockerfile
+    container_name: zero-ingest-price
+    environment:
+      # Database
+      DB_HOST: ${DB_HOST:-timescaledb}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-zero_trading}
+      DB_USER: ${DB_USER:-zero_user}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # Redis
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      # Provider
+      PROVIDER_TYPE: ${PROVIDER_TYPE:-mock}
+      POLYGON_API_KEY: ${POLYGON_API_KEY:-}
+      # API
+      API_PORT: ${API_PORT:-8080}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - zero-network
 
 networks:
   zero-network:

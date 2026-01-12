@@ -25,7 +25,7 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 - ✅ A decision support system
 - ✅ Probabilistic and explainable
 - ✅ Regime-conditioned
-- ✅ Self-learning (truth test loop)
+- ✅ Designed for calibration via truth testing (implemented in future milestones)
 
 **Note:** Milestones 0-2 complete. Level 0 (Market Permission/Veto) is operational. Scanner and ranking engines coming in future milestones.
 
@@ -65,14 +65,14 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 - ✅ Weekend/holiday detection (automatic RED/Halt)
 
 **What's NOT Included (Future Milestones):**
-- ❌ Scanner engine (Level 2)
-- ❌ Opportunity ranking (Level 3)
 - ❌ Attention/Narrative engine (Level 1)
+- ❌ Scanner engine (Level 2)
+- ❌ Opportunity ranking / Probability engine (Level 3)
 - ❌ Trading execution
 
 ---
 
-## 🚀 Quick Start (Milestone 0)
+## 🚀 Quick Start (Milestones 0-2)
 
 ### Prerequisites
 

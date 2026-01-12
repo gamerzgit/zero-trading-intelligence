@@ -160,25 +160,30 @@ class ZeroScannerService:
             logger.info("✅ Subscribed to chan:market_state_changed")
             
             async for message in pubsub.listen():
+                if not self.is_running:
+                    break
+                    
                 if message['type'] == 'message':
                     try:
                         # Parse notification
                         data = json.loads(message['data'].decode('utf-8'))
                         state_key = data.get('state_key', 'key:market_state')
                         
+                        # Get old state before fetching new one
+                        old_state_str = self.market_state.state if self.market_state else None
+                        
                         # Get new state
                         new_state = await self.get_market_state()
                         
-                        if new_state and self.market_state:
-                            old_state = self.market_state.state
+                        if new_state:
                             new_state_str = new_state.state
                             
                             # Trigger immediate rescan on favorable transitions
-                            if old_state == "RED" and new_state_str in ["YELLOW", "GREEN"]:
-                                logger.info(f"🔄 MarketState changed {old_state} -> {new_state_str} - triggering immediate scan")
+                            if old_state_str == "RED" and new_state_str in ["YELLOW", "GREEN"]:
+                                logger.info(f"🔄 MarketState changed {old_state_str} -> {new_state_str} - triggering immediate scan")
                                 self.scan_event.set()
-                            elif old_state == "YELLOW" and new_state_str == "GREEN":
-                                logger.info(f"🔄 MarketState changed {old_state} -> {new_state_str} - triggering immediate scan")
+                            elif old_state_str == "YELLOW" and new_state_str == "GREEN":
+                                logger.info(f"🔄 MarketState changed {old_state_str} -> {new_state_str} - triggering immediate scan")
                                 self.scan_event.set()
                     except Exception as e:
                         logger.error(f"❌ Error processing market state change: {e}")
@@ -278,7 +283,27 @@ class ZeroScannerService:
             return
         
         try:
-            # Create structured state with all horizons
+            # Publish per-horizon CandidateList messages (contract compliance)
+            # Also store structured state in key for easy access
+            total_candidates = 0
+            
+            for horizon, candidates in all_candidates.items():
+                # Create CandidateList per horizon (contract compliance)
+                candidate_list = CandidateList(
+                    candidates=candidates,
+                    horizon=horizon,
+                    scan_time=datetime.now(timezone.utc),
+                    filter_stats={}  # Can add stats later
+                )
+                
+                # Publish to channel (per-horizon messages)
+                channel = "chan:active_candidates"
+                payload = candidate_list.model_dump_json().encode('utf-8')
+                await self.redis_client.publish(channel, payload)
+                
+                total_candidates += len(candidates)
+            
+            # Store structured state in key (all horizons together, no overwrite)
             scanner_state = {
                 "intraday": {
                     "H30": all_candidates.get("H30", []),
@@ -292,12 +317,6 @@ class ZeroScannerService:
             }
             
             state_json = json.dumps(scanner_state)
-            
-            # Publish to channel (one message with all horizons)
-            channel = "chan:active_candidates"
-            await self.redis_client.publish(channel, state_json.encode('utf-8'))
-            
-            # Store in key (with TTL)
             key = "key:active_candidates"
             await self.redis_client.setex(
                 key,
@@ -311,7 +330,6 @@ class ZeroScannerService:
                 datetime.now(timezone.utc).isoformat()
             )
             
-            total_candidates = sum(len(candidates) for candidates in all_candidates.values())
             logger.info(f"✅ Published {total_candidates} total candidates (all horizons) to Redis")
         except Exception as e:
             logger.error(f"❌ Failed to publish candidates: {e}")

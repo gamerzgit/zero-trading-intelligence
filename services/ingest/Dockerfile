@@ -11,7 +11,9 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements and install Python dependencies
 COPY services/ingest/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    python -c "import redis.asyncio; print('✅ redis.asyncio import successful')" || \
+    (echo "❌ redis.asyncio import failed" && pip list | grep redis && exit 1)
 
 # Copy application code
 COPY services/ingest/ /app/

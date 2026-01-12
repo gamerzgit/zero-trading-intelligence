@@ -252,7 +252,8 @@ class ZeroScannerService:
                     candidates.append(ticker)
                     logger.debug(f"✅ {ticker} passed filters for {horizon}")
                 else:
-                    logger.debug(f"❌ {ticker} failed {stats.get('filter', 'unknown')} filter")
+                    failed_filter = stats.get('failed_filter', 'unknown')
+                    logger.debug(f"❌ {ticker} failed {failed_filter} filter")
                     
             except Exception as e:
                 logger.error(f"❌ Error scanning {ticker}: {e}")

@@ -234,7 +234,26 @@ CREATE INDEX idx_opportunity_log_time_ticker_horizon ON opportunity_log (time, t
 CREATE INDEX idx_opportunity_log_score ON opportunity_log (opportunity_score);
 
 -- ============================================================================
--- 7. PERFORMANCE LOG (Truth Test Results)
+-- 7. SCANNER LOG (Level 2 - Candidate Detection)
+-- ============================================================================
+
+CREATE TABLE scanner_log (
+    id BIGSERIAL PRIMARY KEY,
+    time TIMESTAMPTZ NOT NULL,
+    ticker VARCHAR(10) NOT NULL,
+    horizon VARCHAR(10) NOT NULL,  -- H30, H2H, HDAY, or HWEEK
+    action VARCHAR(20) NOT NULL,  -- 'ADDED', 'REMOVED', 'MAINTAINED'
+    reason_json JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_scanner_log_time ON scanner_log (time);
+CREATE INDEX idx_scanner_log_ticker ON scanner_log (ticker);
+CREATE INDEX idx_scanner_log_horizon ON scanner_log (horizon);
+CREATE INDEX idx_scanner_log_action ON scanner_log (action);
+
+-- ============================================================================
+-- 8. PERFORMANCE LOG (Truth Test Results)
 -- ============================================================================
 
 CREATE TABLE performance_log (

@@ -52,8 +52,8 @@ if os.path.exists(env_path):
 # For host-side scripts, use localhost (Docker ports are exposed)
 # For Docker containers, use service names (timescaledb, redis)
 DB_HOST = os.getenv('DB_HOST', 'localhost')
-# If DB_HOST is a Docker service name, try localhost for host-side scripts
-if DB_HOST in ['timescaledb', 'redis']:
+# If DB_HOST is a Docker service name, use localhost for host-side scripts
+if DB_HOST == 'timescaledb':
     DB_HOST = 'localhost'
 
 DB_PORT = int(os.getenv('DB_PORT', '5432'))
@@ -62,8 +62,8 @@ DB_USER = os.getenv('DB_USER', 'zero_user')
 DB_PASSWORD = os.getenv('DB_PASSWORD', '')
 
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-# If REDIS_HOST is a Docker service name, try localhost for host-side scripts
-if REDIS_HOST in ['timescaledb', 'redis']:
+# If REDIS_HOST is a Docker service name, use localhost for host-side scripts
+if REDIS_HOST == 'redis':
     REDIS_HOST = 'localhost'
 
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))

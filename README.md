@@ -84,19 +84,31 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
   - NVIDIA Container Toolkit
   - Make (optional, for convenience)
   
-**Jetson SDK Components (Included with JetPack 6.2):**
-- ✅ **CUDA Toolkit** - Included (for future ML model GPU acceleration)
-- ✅ **TensorRT** - Included (for future ML model optimization)
-- ✅ **cuDNN** - Included (for deep learning operations)
-- ❌ **DeepStream** - Not needed (video analytics not required)
-- ❌ **VisionWorks** - Not needed (computer vision not required)
+**JetPack 6.2 Installation Guide (SDK Manager):**
 
-**Jetson Platform Services (Recommended):**
-- ✅ **System Monitoring** - Pre-installed (for thermal/power monitoring)
-- ✅ **Power Management** - Pre-installed (MAXN mode support)
-- ✅ **Jetson Stats** - Optional but recommended (system health monitoring)
-  
-**Note:** For Milestones 0-2 (current), only Docker and Python are required. TensorRT/CUDA will be needed for future milestones (ML models, LLM inference).
+**During JetPack Installation - What to Select:**
+
+1. **✅ SELECT - Core Components (Usually Default):**
+   - ✅ **Jetson Linux** - Required (base OS)
+   - ✅ **Sample Root Filesystem** - Required (Ubuntu 22.04)
+   - ✅ **CUDA Toolkit** - Required (for future ML model GPU acceleration)
+   - ✅ **TensorRT** - Required (for future ML model optimization)
+   - ✅ **cuDNN** - Required (for deep learning operations)
+   - ✅ **Jetson Platform Services** - **SELECT THIS** (system monitoring, power management, MAXN mode support)
+
+2. **❌ SKIP - Optional SDK Components (Not Needed for ZERO):**
+   - ❌ **DeepStream SDK** - Skip (video analytics not required)
+   - ❌ **VisionWorks** - Skip (computer vision not required)
+   - ❌ **Multimedia API** - Skip (video/audio processing not required)
+   - ❌ **VPI (Vision Programming Interface)** - Skip
+
+**Post-Installation (Optional but Recommended):**
+- ✅ **Jetson Stats** - Install separately: `sudo pip3 install -U jetson-stats` (system health monitoring)
+
+**Note:** 
+- For Milestones 0-2 (current), base JetPack is sufficient
+- TensorRT/CUDA are included by default and will be needed for future milestones (ML models, LLM inference)
+- **Platform Services are essential** - make sure to select them during installation
 
 **CRITICAL - Storage Location:**
 - Ensure `data_nvme/` is located on NVMe mount (example: `/mnt/nvme/zero/data_nvme`)

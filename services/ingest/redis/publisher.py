@@ -18,7 +18,7 @@ except ImportError:
 from typing import Optional
 from datetime import datetime
 
-from ..provider.base import Candle
+from provider.base import Candle
 
 # Import schemas
 try:

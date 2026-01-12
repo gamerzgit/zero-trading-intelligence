@@ -7,7 +7,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 import os
 
-from ..provider.base import Candle
+from provider.base import Candle
 
 
 class DatabaseWriter:

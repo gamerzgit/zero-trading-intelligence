@@ -39,7 +39,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class ScannerService:
+class ZeroScannerService:
     """ZERO Scanner Service - Level 2 Opportunity Discovery"""
     
     def __init__(self):
@@ -65,6 +65,11 @@ class ScannerService:
         self.is_running = False
         self.last_scan_time: Optional[datetime] = None
         self.current_candidates: Dict[str, List[str]] = {}  # horizon -> list of tickers
+        self.previous_candidates: Dict[str, List[str]] = {}  # For diff detection
+        self.market_state: Optional[MarketState] = None
+        self.last_market_state_time: Optional[datetime] = None
+        self.market_state_warning_logged = False  # Log warning once
+        self.scan_event = asyncio.Event()  # For event-based wakeups
         
     def _load_scan_universe(self) -> List[str]:
         """Load scan universe (default: S&P 500)"""
@@ -127,14 +132,58 @@ class ScannerService:
         try:
             state_json = await self.redis_client.get("key:market_state")
             if not state_json:
-                logger.warning("⚠️  MarketState not found in Redis")
+                # If missing, assume RED (veto) - log warning once
+                if not self.market_state_warning_logged:
+                    logger.warning("⚠️  MarketState not found in Redis - assuming RED (veto)")
+                    self.market_state_warning_logged = True
                 return None
             
             state_dict = json.loads(state_json.decode('utf-8'))
-            return MarketState(**state_dict)
+            market_state = MarketState(**state_dict)
+            self.market_state = market_state
+            self.last_market_state_time = datetime.now(timezone.utc)
+            self.market_state_warning_logged = False  # Reset if we get state
+            return market_state
         except Exception as e:
             logger.error(f"❌ Failed to get MarketState: {e}")
             return None
+    
+    async def subscribe_market_state_changes(self):
+        """Subscribe to market state changes for event-based wakeups"""
+        if not self.redis_client:
+            return
+        
+        try:
+            pubsub = self.redis_client.pubsub()
+            await pubsub.subscribe("chan:market_state_changed")
+            
+            logger.info("✅ Subscribed to chan:market_state_changed")
+            
+            async for message in pubsub.listen():
+                if message['type'] == 'message':
+                    try:
+                        # Parse notification
+                        data = json.loads(message['data'].decode('utf-8'))
+                        state_key = data.get('state_key', 'key:market_state')
+                        
+                        # Get new state
+                        new_state = await self.get_market_state()
+                        
+                        if new_state and self.market_state:
+                            old_state = self.market_state.state
+                            new_state_str = new_state.state
+                            
+                            # Trigger immediate rescan on favorable transitions
+                            if old_state == "RED" and new_state_str in ["YELLOW", "GREEN"]:
+                                logger.info(f"🔄 MarketState changed {old_state} -> {new_state_str} - triggering immediate scan")
+                                self.scan_event.set()
+                            elif old_state == "YELLOW" and new_state_str == "GREEN":
+                                logger.info(f"🔄 MarketState changed {old_state} -> {new_state_str} - triggering immediate scan")
+                                self.scan_event.set()
+                    except Exception as e:
+                        logger.error(f"❌ Error processing market state change: {e}")
+        except Exception as e:
+            logger.error(f"❌ Failed to subscribe to market state changes: {e}")
     
     async def fetch_candles(
         self, 
@@ -222,31 +271,37 @@ class ScannerService:
         
         return results
     
-    async def publish_candidates(self, horizon: str, candidates: List[str]):
-        """Publish candidates to Redis"""
+    async def publish_all_candidates(self, all_candidates: Dict[str, List[str]]):
+        """Publish all horizon candidates to Redis (structured, no overwrite)"""
         if not self.redis_client:
             return
         
         try:
-            # Create CandidateList
-            candidate_list = CandidateList(
-                candidates=candidates,
-                horizon=horizon,
-                scan_time=datetime.now(timezone.utc),
-                filter_stats={}  # Can add stats later
-            )
+            # Create structured state with all horizons
+            scanner_state = {
+                "intraday": {
+                    "H30": all_candidates.get("H30", []),
+                    "H2H": all_candidates.get("H2H", [])
+                },
+                "swing": {
+                    "HDAY": all_candidates.get("HDAY", []),
+                    "HWEEK": all_candidates.get("HWEEK", [])
+                },
+                "scan_time": datetime.now(timezone.utc).isoformat()
+            }
             
-            # Publish to channel
+            state_json = json.dumps(scanner_state)
+            
+            # Publish to channel (one message with all horizons)
             channel = "chan:active_candidates"
-            payload = candidate_list.model_dump_json().encode('utf-8')
-            await self.redis_client.publish(channel, payload)
+            await self.redis_client.publish(channel, state_json.encode('utf-8'))
             
             # Store in key (with TTL)
             key = "key:active_candidates"
             await self.redis_client.setex(
                 key,
                 300,  # 5 minute TTL
-                candidate_list.model_dump_json()
+                state_json
             )
             
             # Update last scan time
@@ -255,64 +310,120 @@ class ScannerService:
                 datetime.now(timezone.utc).isoformat()
             )
             
-            logger.info(f"✅ Published {len(candidates)} candidates for {horizon} to Redis")
+            total_candidates = sum(len(candidates) for candidates in all_candidates.values())
+            logger.info(f"✅ Published {total_candidates} total candidates (all horizons) to Redis")
         except Exception as e:
             logger.error(f"❌ Failed to publish candidates: {e}")
     
-    async def log_candidates_to_db(self, horizon: str, candidates: List[str], market_state: MarketState):
-        """Log candidates to opportunity_log (Level 2 - minimal data)"""
-        if not self.db_pool or not candidates:
+    async def log_candidate_changes_to_db(
+        self, 
+        horizon: str, 
+        new_candidates: List[str],
+        previous_candidates: List[str],
+        market_state: MarketState
+    ):
+        """Log candidate changes to scanner_log (edge-based, not spam)"""
+        if not self.db_pool:
             return
         
         try:
-            # For Level 2 candidates, we log with placeholder values for Level 3 fields
-            query = """
-                INSERT INTO opportunity_log (
-                    time, ticker, horizon,
-                    opportunity_score, probability, target_atr, stop_atr,
-                    market_state, attention_stability_score, attention_bucket
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            """
+            # Calculate diff
+            added = set(new_candidates) - set(previous_candidates)
+            removed = set(previous_candidates) - set(new_candidates)
+            maintained = set(new_candidates) & set(previous_candidates)
             
             now = datetime.now(timezone.utc)
             
-            for ticker in candidates:
+            # Log added candidates
+            for ticker in added:
                 await self.db_pool.execute(
-                    query,
-                    now,  # time
-                    ticker,  # ticker
-                    horizon,  # horizon
-                    0.0,  # opportunity_score (Level 2 - no score yet)
-                    0.0,  # probability (Level 2 - no probability yet)
-                    0.0,  # target_atr (placeholder)
-                    0.0,  # stop_atr (placeholder)
-                    market_state.state,  # market_state
-                    0.0,  # attention_stability_score (Level 1 not implemented)
-                    None  # attention_bucket (NULL allowed)
+                    """
+                    INSERT INTO scanner_log (time, ticker, horizon, action, reason_json)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    now,
+                    ticker,
+                    horizon,
+                    'ADDED',
+                    json.dumps({
+                        "market_state": market_state.state,
+                        "filter_passed": True
+                    })
                 )
             
-            logger.info(f"✅ Logged {len(candidates)} candidates for {horizon} to DB")
+            # Log removed candidates
+            for ticker in removed:
+                await self.db_pool.execute(
+                    """
+                    INSERT INTO scanner_log (time, ticker, horizon, action, reason_json)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    now,
+                    ticker,
+                    horizon,
+                    'REMOVED',
+                    json.dumps({
+                        "market_state": market_state.state,
+                        "filter_failed": True
+                    })
+                )
+            
+            # Only log maintained on first scan (when previous is empty)
+            if not previous_candidates:
+                for ticker in maintained:
+                    await self.db_pool.execute(
+                        """
+                        INSERT INTO scanner_log (time, ticker, horizon, action, reason_json)
+                        VALUES ($1, $2, $3, $4, $5)
+                        """,
+                        now,
+                        ticker,
+                        horizon,
+                        'MAINTAINED',
+                        json.dumps({
+                            "market_state": market_state.state,
+                            "filter_passed": True
+                        })
+                    )
+            
+            total_changes = len(added) + len(removed) + (len(maintained) if not previous_candidates else 0)
+            if total_changes > 0:
+                logger.info(f"✅ Logged {total_changes} candidate changes for {horizon} to scanner_log")
         except Exception as e:
-            logger.error(f"❌ Failed to log candidates to DB: {e}")
+            logger.error(f"❌ Failed to log candidate changes to DB: {e}")
     
     async def scan_loop(self):
-        """Main scanning loop"""
+        """Main scanning loop (event-aware)"""
         logger.info("🚀 Starting scanner loop...")
+        
+        # Get initial market state
+        market_state = await self.get_market_state()
         
         while self.is_running:
             try:
-                # Check MarketState - if RED, sleep
+                # Check MarketState - if RED or missing, sleep
                 market_state = await self.get_market_state()
                 
                 if not market_state:
-                    logger.warning("⚠️  MarketState not available, sleeping...")
-                    await asyncio.sleep(self.scan_interval)
-                    continue
+                    # Missing state = assume RED (veto)
+                    logger.debug("🔴 MarketState missing - assuming RED, sleeping...")
+                    # Wait for event or timeout
+                    try:
+                        await asyncio.wait_for(self.scan_event.wait(), timeout=self.scan_interval)
+                        self.scan_event.clear()
+                        continue  # Event triggered, re-check state
+                    except asyncio.TimeoutError:
+                        continue  # Timeout, re-check state
                 
                 if market_state.state == "RED":
-                    logger.info("🔴 MarketState is RED - scanner sleeping")
-                    await asyncio.sleep(self.scan_interval)
-                    continue
+                    logger.debug("🔴 MarketState is RED - scanner sleeping")
+                    # Wait for event or timeout
+                    try:
+                        await asyncio.wait_for(self.scan_event.wait(), timeout=self.scan_interval)
+                        self.scan_event.clear()
+                        continue  # Event triggered, re-check state
+                    except asyncio.TimeoutError:
+                        continue  # Timeout, re-check state
                 
                 # Market is GREEN or YELLOW - proceed with scan
                 logger.info(f"✅ MarketState is {market_state.state} - scanning...")
@@ -320,16 +431,31 @@ class ScannerService:
                 # Scan all horizons
                 results = await self.scan_all_horizons()
                 
-                # Publish results
-                for horizon, candidates in results.items():
-                    await self.publish_candidates(horizon, candidates)
-                    await self.log_candidates_to_db(horizon, candidates, market_state)
+                # Publish all results together (structured, no overwrite)
+                await self.publish_all_candidates(results)
                 
+                # Log changes to DB (edge-based)
+                for horizon in get_all_horizons():
+                    new_candidates = results.get(horizon, [])
+                    previous_candidates = self.previous_candidates.get(horizon, [])
+                    await self.log_candidate_changes_to_db(
+                        horizon, 
+                        new_candidates, 
+                        previous_candidates,
+                        market_state
+                    )
+                
+                # Update state
+                self.previous_candidates = results.copy()
                 self.current_candidates = results
-                self.last_scan_time = datetime.now()
+                self.last_scan_time = datetime.now(timezone.utc)
                 
-                # Sleep until next scan
-                await asyncio.sleep(self.scan_interval)
+                # Wait for next scan or event
+                try:
+                    await asyncio.wait_for(self.scan_event.wait(), timeout=self.scan_interval)
+                    self.scan_event.clear()
+                except asyncio.TimeoutError:
+                    pass  # Normal timeout, continue loop
                 
             except Exception as e:
                 logger.error(f"❌ Error in scan loop: {e}")
@@ -343,6 +469,9 @@ class ScannerService:
         await self.connect_redis()
         
         self.is_running = True
+        
+        # Start market state subscription (background task)
+        asyncio.create_task(self.subscribe_market_state_changes())
         
         # Start scan loop
         await self.scan_loop()
@@ -369,7 +498,9 @@ class ScannerService:
             },
             "scan_universe_size": len(self.scan_universe),
             "db_connected": self.db_pool is not None,
-            "redis_connected": self.redis_client is not None
+            "redis_connected": self.redis_client is not None,
+            "market_state_seen": self.market_state.state if self.market_state else None,
+            "last_market_state_timestamp": self.last_market_state_time.isoformat() if self.last_market_state_time else None
         }
         
         status = "healthy" if (self.is_running and self.db_pool and self.redis_client) else "unhealthy"
@@ -394,7 +525,7 @@ async def create_app():
     """Create aiohttp app"""
     app = web.Application()
     
-    scanner_service = ScannerService()
+    scanner_service = ZeroScannerService()
     app['scanner_service'] = scanner_service
     
     app.router.add_get('/health', health_handler)

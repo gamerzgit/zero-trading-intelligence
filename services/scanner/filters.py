@@ -187,40 +187,65 @@ class ScannerFilters:
         candles_5m: pd.DataFrame
     ) -> tuple[bool, Dict[str, Any]]:
         """
-        Apply all filters and return combined result
+        Apply all filters and return standardized result
         
         Returns:
-            (passed, combined_stats_dict)
+            (passed, standardized_stats_dict)
         """
+        metrics = {}
+        
         # Apply liquidity filter
         liquidity_passed, liquidity_stats = self.filter_liquidity(ticker, candles_1m, candles_5m)
         if not liquidity_passed:
             return False, {
-                "filter": "liquidity",
-                **liquidity_stats
+                "passed": False,
+                "failed_filter": "liquidity",
+                "metrics": {
+                    **liquidity_stats
+                }
             }
+        metrics.update({
+            "avg_volume": liquidity_stats.get("avg_volume", 0),
+            "relative_volume": liquidity_stats.get("relative_volume", 0)
+        })
         
         # Apply volatility filter
         volatility_passed, volatility_stats = self.filter_volatility(ticker, candles_1m, candles_5m)
         if not volatility_passed:
             return False, {
-                "filter": "volatility",
-                **volatility_stats
+                "passed": False,
+                "failed_filter": "volatility",
+                "metrics": {
+                    **metrics,
+                    **volatility_stats
+                }
             }
+        metrics.update({
+            "atr": volatility_stats.get("atr", 0),
+            "atr_pct": volatility_stats.get("atr_pct", 0),
+            "price": volatility_stats.get("price", 0)
+        })
         
         # Apply structure filter
         structure_passed, structure_stats = self.filter_structure(ticker, candles_1m, candles_5m)
         if not structure_passed:
             return False, {
-                "filter": "structure",
-                **structure_stats
+                "passed": False,
+                "failed_filter": "structure",
+                "metrics": {
+                    **metrics,
+                    **structure_stats
+                }
             }
+        metrics.update({
+            "trend": structure_stats.get("trend", "UNKNOWN"),
+            "pattern": structure_stats.get("pattern", "NONE")
+        })
         
         # All filters passed
         return True, {
-            "liquidity": liquidity_stats,
-            "volatility": volatility_stats,
-            "structure": structure_stats,
-            "passed_all": True
+            "passed": True,
+            "failed_filter": None,
+            "metrics": metrics
         }
 

@@ -43,6 +43,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: zero-grafana
+    user: "0:0"  # Run as root to avoid permission issues
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}

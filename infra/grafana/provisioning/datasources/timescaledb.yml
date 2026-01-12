@@ -7,8 +7,10 @@ datasources:
     url: timescaledb:5432
     database: zero_trading
     user: zero_user
+    # Password will be set via Grafana UI or environment variable
+    # Grafana provisioning doesn't expand ${} variables, so leave editable
     secureJsonData:
-      password: ${POSTGRES_PASSWORD}
+      password: ""
     jsonData:
       sslmode: disable
       postgresVersion: 1400

@@ -9,10 +9,11 @@ project_root = os.path.join(os.path.dirname(__file__), '../../../')
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-import redis.asyncio as aioredis
-
 from typing import Optional
 from datetime import datetime
+
+# Import redis async client - same pattern as scanner service
+import redis.asyncio as aioredis
 
 from provider.base import Candle
 

@@ -77,7 +77,7 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 ### Prerequisites
 
 - **Hardware:** NVIDIA Jetson Orin AGX (ARM64)
-- **OS:** Ubuntu 22.04 LTS (JetPack 6.x)
+- **OS:** Ubuntu 22.04 LTS (JetPack 6.2 rev 2)
 - **Storage:** 1TB NVMe SSD mounted
 - **Software:**
   - Docker & Docker Compose

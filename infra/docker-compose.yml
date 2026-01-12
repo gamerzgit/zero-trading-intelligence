@@ -142,6 +142,45 @@ services:
     networks:
       - zero-network
 
+  # Scanner Service (Milestone 3)
+  zero-scanner:
+    build:
+      context: ..
+      dockerfile: services/scanner/Dockerfile
+    container_name: zero-scanner
+    environment:
+      # Database
+      DB_HOST: ${DB_HOST:-timescaledb}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-zero_trading}
+      DB_USER: ${DB_USER:-zero_user}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # Redis
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      # Scanner config
+      SCAN_INTERVAL_SECONDS: ${SCAN_INTERVAL_SECONDS:-60}
+      # API
+      API_PORT: ${SCANNER_API_PORT:-8001}
+    ports:
+      - "${SCANNER_API_PORT:-8001}:8001"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      zero-regime:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - zero-network
+
 networks:
   zero-network:
     driver: bridge

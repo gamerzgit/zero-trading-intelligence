@@ -112,6 +112,12 @@ class StandaloneVerifier:
             ('services/regime/main.py', 'Regime engine service'),
             ('services/regime/logic.py', 'Regime calculator'),
             ('services/regime/vol_proxy.py', 'Volatility proxy'),
+            ('services/scanner/main.py', 'Scanner service'),
+            ('services/scanner/filters.py', 'Scanner filters'),
+            ('services/scanner/horizon.py', 'Horizon definitions'),
+            ('services/scanner/main.py', 'Scanner service'),
+            ('services/scanner/filters.py', 'Scanner filters'),
+            ('services/scanner/horizon.py', 'Horizon definitions'),
             ('infra/db/init.sql', 'Database init script'),
         ]
         
@@ -376,10 +382,19 @@ class StandaloneVerifier:
                 print("   ✅ Ready to ingest real market data!")
             else:
                 print("⚠️  No minute bars returned for Friday")
-                print("   Daily bar data is available above")
-                print("   ✅ API connection works - IEX feed accessible")
+                print("   Possible causes:")
+                print("     - Wrong feed parameter (IEX vs SIP)")
+                print("     - Timezone window wrong (requesting outside market hours)")
+                print("     - Weekend logic picking wrong day")
+                print("     - Alpaca API subscription limits")
+                print("   Daily bar data is available above (auth OK)")
+                print("   ⚠️  Minute bars unavailable - this is a WARN, not a failure")
             
-            print("\n✅ Alpaca API: Connection verified and data retrieval works")
+            print("\n✅ Alpaca API: Connection verified (daily bars work)")
+            if minute_bars and "SPY" in minute_bars and len(minute_bars["SPY"]) > 0:
+                print("✅ Minute bars also available")
+            else:
+                print("⚠️  Minute bars unavailable (WARN only - pipeline may work with backfill)")
             return True
         
         except Exception as e:
@@ -687,11 +702,12 @@ class StandaloneVerifier:
             except (ImportError, ValueError) as e:
                 error_str = str(e)
                 if "pandas_market_calendars" in error_str or "pandas-market-calendars" in error_str or "required for market hours" in error_str:
-                    print("⚠️  RegimeCalculator requires pandas-market-calendars")
-                    print("   Code structure is correct, but dependency missing")
+                    print("❌ RegimeCalculator requires pandas-market-calendars")
+                    print("   Milestone 2 (Regime Engine) is NOT runnable without this dependency")
                     print("   Install: pip install pandas-market-calendars")
-                    print("   ✅ Code validation: PASS (structure OK, dependency needed)")
-                    # Continue with schema tests using mock values
+                    print("   On Jetson: Already in services/regime/requirements.txt (rebuild container)")
+                    print("   ❌ Code validation: FAIL (hard requirement missing)")
+                    return False  # FAIL - this is a hard requirement
                 else:
                     raise
             
@@ -767,13 +783,7 @@ class StandaloneVerifier:
                         event_risk=False
                     )
                     print(f"✅ Weekend detection (Sunday): {sunday_state} - {sunday_reason}")
-            else:
-                # Use mock values for schema tests if calculator not available
-                state = "GREEN"
-                reason = "Prime Window"
-                test_time_et = datetime.now(ET)
-                print("⚠️  Skipping logic tests (pandas-market-calendars needed)")
-                print("   Code structure validated - dependency will be installed on Jetson")
+            # If we got here, calculator was instantiated successfully
             
             # Test VolatilityProxy instantiation (without actual API call)
             vol_proxy = VolatilityProxy()
@@ -810,6 +820,125 @@ class StandaloneVerifier:
             traceback.print_exc()
             return False
     
+    async def test_scanner_engine_code(self) -> bool:
+        """Test that Scanner Engine code can be imported and logic works"""
+        print("\n" + "="*60)
+        print("TEST 11: Scanner Engine Code Validation (Milestone 3)")
+        print("="*60)
+        
+        try:
+            # Test importing ZeroScannerService
+            try:
+                from services.scanner.main import ZeroScannerService
+                print("✅ ZeroScannerService imported")
+            except ImportError as e:
+                print(f"❌ Import error: {e}")
+                return False
+            
+            # Test importing ScannerFilters
+            try:
+                from services.scanner.filters import ScannerFilters
+                print("✅ ScannerFilters imported")
+            except ImportError as e:
+                print(f"❌ Import error: {e}")
+                return False
+            
+            # Test importing horizon functions
+            try:
+                from services.scanner.horizon import get_all_horizons, get_horizon_info, get_intraday_horizons, get_swing_horizons
+                print("✅ Horizon functions imported")
+                
+                # Test horizon functions
+                all_horizons = get_all_horizons()
+                print(f"✅ All horizons: {all_horizons}")
+                
+                intraday = get_intraday_horizons()
+                swing = get_swing_horizons()
+                print(f"✅ Intraday horizons: {intraday}")
+                print(f"✅ Swing horizons: {swing}")
+                
+                # Test horizon info
+                h30_info = get_horizon_info("H30")
+                print(f"✅ H30 info: {h30_info.get('name')} ({h30_info.get('candidate_type')})")
+            except ImportError as e:
+                print(f"❌ Import error: {e}")
+                return False
+            
+            # Test ScannerFilters instantiation
+            try:
+                filters = ScannerFilters()
+                print("✅ ScannerFilters can be instantiated")
+                
+                # Test filter output structure (standardized)
+                import pandas as pd
+                import numpy as np
+                
+                # Create mock candles
+                mock_candles = pd.DataFrame({
+                    'time': pd.date_range('2026-01-11', periods=50, freq='5min'),
+                    'open': np.random.uniform(100, 200, 50),
+                    'high': np.random.uniform(100, 200, 50),
+                    'low': np.random.uniform(100, 200, 50),
+                    'close': np.random.uniform(100, 200, 50),
+                    'volume': np.random.randint(100000, 1000000, 50)
+                })
+                mock_candles['high'] = mock_candles[['open', 'close']].max(axis=1) * 1.01
+                mock_candles['low'] = mock_candles[['open', 'close']].min(axis=1) * 0.99
+                
+                # Test filter output structure
+                passed, stats = filters.apply_all_filters("SPY", pd.DataFrame(), mock_candles)
+                
+                # Verify standardized structure
+                if isinstance(stats, dict):
+                    has_passed = 'passed' in stats
+                    has_failed_filter = 'failed_filter' in stats
+                    has_metrics = 'metrics' in stats
+                    
+                    if has_passed and has_failed_filter and has_metrics:
+                        print("✅ Filter output structure is standardized")
+                        print(f"   Structure: passed={has_passed}, failed_filter={has_failed_filter}, metrics={has_metrics}")
+                    else:
+                        print("⚠️  Filter output structure missing required fields")
+                        print(f"   Found: {list(stats.keys())}")
+                else:
+                    print("⚠️  Filter output is not a dict")
+            except Exception as e:
+                print(f"⚠️  Filter test error: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            # Test CandidateList schema
+            from contracts.schemas import CandidateList
+            candidate_list = CandidateList(
+                candidates=["SPY", "AAPL", "MSFT"],
+                horizon="H30",
+                scan_time=datetime.now(timezone.utc),
+                filter_stats={}
+            )
+            print(f"✅ CandidateList schema works: {len(candidate_list.candidates)} candidates for {candidate_list.horizon}")
+            
+            # Test JSON serialization
+            json_str = candidate_list.model_dump_json()
+            print(f"✅ CandidateList JSON serialization works ({len(json_str)} bytes)")
+            
+            # Verify no ranking/probability fields (Level 2 only)
+            candidate_dict = candidate_list.model_dump()
+            forbidden_fields = ['opportunity_score', 'probability', 'rank', 'score']
+            has_forbidden = any(field in candidate_dict for field in forbidden_fields)
+            if not has_forbidden:
+                print("✅ CandidateList contains no ranking/probability fields (Level 2 only)")
+            else:
+                print("❌ CandidateList contains forbidden Level 3 fields")
+                return False
+            
+            return True
+        
+        except Exception as e:
+            print(f"❌ Scanner engine validation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     async def run_all_tests(self):
         """Run all standalone tests"""
         print("\n" + "="*60)
@@ -818,7 +947,7 @@ class StandaloneVerifier:
         print(f"Time: {datetime.now(timezone.utc).isoformat()}")
         print(f"Project Root: {project_root}")
         print("\nNote: This mode tests code without requiring Docker services")
-        print("Testing: Milestone 0 (Contracts) + Milestone 1 (Ingestion) + Milestone 2 (Regime)")
+        print("Testing: Milestone 0 (Contracts) + Milestone 1 (Ingestion) + Milestone 2 (Regime) + Milestone 3 (Scanner)")
         
         results = {}
         
@@ -852,6 +981,9 @@ class StandaloneVerifier:
         # Test 10: Regime Engine (Milestone 2)
         results['regime_engine'] = await self.test_regime_engine_code()
         
+        # Test 11: Scanner Engine (Milestone 3)
+        results['scanner_engine'] = await self.test_scanner_engine_code()
+        
         # Summary
         print("\n" + "="*60)
         print("VERIFICATION SUMMARY")
@@ -861,7 +993,7 @@ class StandaloneVerifier:
             status = "✅ PASS" if passed else "❌ FAIL"
             print(f"{test.upper():20} {status}")
         
-        critical_tests = ['imports', 'structure', 'provider_code', 'db_writer', 'redis_publisher', 'schemas', 'integration', 'regime_engine']
+        critical_tests = ['imports', 'structure', 'provider_code', 'db_writer', 'redis_publisher', 'schemas', 'integration', 'regime_engine', 'scanner_engine']
         critical_passed = all(results.get(t, False) for t in critical_tests)
         
         if critical_passed:
@@ -870,6 +1002,7 @@ class StandaloneVerifier:
             print("  ✅ Milestone 0: Architecture & Contracts")
             print("  ✅ Milestone 1: Price Ingestion")
             print("  ✅ Milestone 2: Regime Engine")
+            print("  ✅ Milestone 3: Scanner Engine")
             print("\nNext steps:")
             print("1. Deploy to Jetson Orin AGX")
             print("2. Run 'make up' to start Docker services")

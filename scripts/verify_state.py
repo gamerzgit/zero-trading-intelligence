@@ -822,7 +822,7 @@ class StateVerifier:
         if self.db_pool:
             await self.db_pool.close()
         if self.redis_client:
-            await self.redis_client.close()
+            await self.redis_client.aclose()
 
 
 async def main():

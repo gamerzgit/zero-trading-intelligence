@@ -218,11 +218,18 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
    python scripts/verify_system.py
    ```
    
-   **Note:** Ensure your `.env` file contains Alpaca credentials:
+   **Note:** Ensure your `.env` file contains the credentials required by your selected provider:
+   
+   **For Alpaca:**
    ```bash
    ALPACA_API_KEY=your_key_here
    ALPACA_SECRET_KEY=your_secret_here
    ALPACA_PAPER=true
+   ```
+   
+   **For Polygon:**
+   ```bash
+   POLYGON_API_KEY=your_key_here
    ```
 
 ---
@@ -529,6 +536,22 @@ curl http://localhost:8080/health
 curl http://localhost:8000/health
 ```
 
+### Market Hours vs Off-Hours Behavior
+
+**Services run 24/7:**
+- All Docker services remain running continuously
+- The Jetson stays operational even when markets are closed
+
+**During Market Hours (9:30 AM - 4:00 PM ET, weekdays):**
+- Ingestion service streams live market data
+- Regime engine updates market state every minute
+- Market state can be GREEN, YELLOW, or RED based on conditions
+
+**During Off-Hours / Weekends / Holidays:**
+- Market state automatically set to RED (Halt)
+- Ingestion service may be idle or perform backfill operations
+- Services continue running and monitoring for market open
+
 ---
 
 ## 📚 Documentation
@@ -594,10 +617,10 @@ chmod -R 755 data_nvme/
 - ✅ **Milestone 0:** Architecture & Contracts
 - ✅ **Milestone 1:** Price ingestion service
 - ✅ **Milestone 2:** Regime engine (Level 0)
-- **Milestone 3:** Scanner (Level 2) - Opportunity Discovery
-- **Milestone 4:** Core logic (Level 3) - Opportunity Ranking
-- **Milestone 5:** Narrative LLM (Level 1) - Attention & Narrative
-- **Milestone 6:** Truth test & learning loop
+- **Milestone 3:** Attention Engine (Level 1) - Attention state (score-based) + dominance signals
+- **Milestone 4:** Scanner (Level 2) - Candidate discovery
+- **Milestone 5:** Probability Engine (Level 3) - Ranking + probabilities
+- **Milestone 6:** Narrative Engine (Level 1b) + Truth Test & Calibration loop
 
 ---
 

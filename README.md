@@ -83,6 +83,265 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
   - Docker & Docker Compose
   - NVIDIA Container Toolkit
   - Make (optional, for convenience)
+
+---
+
+## 📦 First Time Installation Guide
+
+**If this is your first time setting up ZERO on your Jetson, follow these steps:**
+
+### Step 1: Install JetPack 6.2 rev 2 (If Not Already Installed)
+
+1. **Download SDK Manager** from NVIDIA Developer Portal
+2. **Connect your Jetson Orin AGX** via USB-C to your host machine
+3. **Select Components:**
+   - ✅ Jetson Linux
+   - ✅ Sample Root Filesystem (Ubuntu 22.04)
+   - ✅ CUDA Toolkit
+   - ✅ TensorRT
+   - ✅ cuDNN
+   - ✅ **Jetson Platform Services** (IMPORTANT)
+   - ❌ Skip: DeepStream, VisionWorks, Multimedia API, VPI
+4. **Flash the Jetson** and complete initial setup
+
+### Step 2: Initial Jetson Configuration
+
+**SSH into your Jetson:**
+```bash
+ssh jetson@<jetson-ip-address>
+```
+
+**Update system:**
+```bash
+sudo apt update
+sudo apt upgrade -y
+```
+
+**Set to MAXN Power Mode (CRITICAL):**
+```bash
+sudo nvpmodel -m 0
+sudo jetson_clocks
+```
+
+**Verify power mode:**
+```bash
+sudo nvpmodel -q  # Should show "MODE: 0 (MAXN)"
+```
+
+### Step 3: Install Docker & Docker Compose
+
+**Install Docker:**
+```bash
+# Add Docker's official GPG key
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add Docker repository
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Add your user to docker group (to run without sudo)
+sudo usermod -aG docker $USER
+newgrp docker  # Apply group change
+
+# Verify Docker installation
+docker --version
+docker compose version
+```
+
+**Note:** You may need to log out and back in for the docker group to take effect.
+
+### Step 4: Install NVIDIA Container Toolkit
+
+**Install NVIDIA Container Toolkit:**
+```bash
+# Add NVIDIA package repositories
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
+  sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+
+# Install nvidia-container-toolkit
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+
+# Configure Docker to use NVIDIA runtime
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+# Verify NVIDIA Container Toolkit
+docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
+```
+
+### Step 5: Install Make (Optional but Recommended)
+
+```bash
+sudo apt-get install -y make
+```
+
+### Step 6: Install Jetson Stats (Optional but Recommended)
+
+```bash
+sudo pip3 install -U jetson-stats
+sudo systemctl restart jtop  # If installed
+# Run: jtop  # To view system stats
+```
+
+### Step 7: Clone/Download ZERO Project
+
+**Clone the repository:**
+```bash
+cd ~
+git clone https://github.com/gamerzgit/zero-trading-intelligence.git
+cd zero-trading-intelligence
+```
+
+**Or if transferring manually:**
+```bash
+# Transfer project files to Jetson (via SCP, USB, etc.)
+cd ~
+# Extract/unzip to: ~/zero-trading-intelligence
+cd zero-trading-intelligence
+```
+
+### Step 8: Configure Environment Variables
+
+**Create `.env` file:**
+```bash
+cp .env.example .env
+nano .env  # Or use your preferred editor
+```
+
+**Required variables (minimum):**
+```bash
+# Database
+DB_PASSWORD=your_secure_password_here
+DB_USER=zero_user
+DB_NAME=zero_trading
+
+# Redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+# Data Provider (choose ONE)
+# Option 1: Alpaca
+PROVIDER_TYPE=alpaca
+ALPACA_API_KEY=your_alpaca_key_here
+ALPACA_SECRET_KEY=your_alpaca_secret_here
+ALPACA_PAPER=true
+
+# Option 2: Polygon
+# PROVIDER_TYPE=polygon
+# POLYGON_API_KEY=your_polygon_key_here
+
+# Grafana
+GRAFANA_ADMIN_PASSWORD=your_grafana_password_here
+```
+
+**Save and exit** (Ctrl+X, then Y, then Enter in nano)
+
+### Step 9: Create Data Directories
+
+**CRITICAL - Use NVMe storage (NOT eMMC):**
+
+```bash
+# Option 1: If NVMe is mounted at /mnt/nvme
+sudo mkdir -p /mnt/nvme/zero/data_nvme/{timescaledb,redis,grafana}
+sudo chown -R $USER:$USER /mnt/nvme/zero/data_nvme
+cd ~/zero-trading-intelligence
+ln -s /mnt/nvme/zero/data_nvme data_nvme
+
+# Option 2: If project is on NVMe already
+mkdir -p data_nvme/{timescaledb,redis,grafana}
+```
+
+**Verify storage location:**
+```bash
+df -h data_nvme/  # Should show NVMe device, not eMMC
+```
+
+### Step 10: Start Services
+
+**Start all services:**
+```bash
+make up
+# Or manually:
+# docker compose -f infra/docker-compose.yml up -d
+```
+
+**Check service status:**
+```bash
+make status
+# Or:
+# docker compose -f infra/docker-compose.yml ps
+```
+
+**View logs (if needed):**
+```bash
+make logs
+# Or:
+# docker compose -f infra/docker-compose.yml logs -f
+```
+
+### Step 11: Verify Installation
+
+**Wait 30-60 seconds for services to start, then verify:**
+
+**Check TimescaleDB:**
+```bash
+make psql
+# In psql, run:
+# \dt  # Should show tables
+# \q   # Exit
+```
+
+**Check Redis:**
+```bash
+make redis-cli
+# In redis-cli, run:
+# PING  # Should return PONG
+# exit
+```
+
+**Check service health:**
+```bash
+# Ingestion service
+curl http://localhost:8080/health
+
+# Regime engine service
+curl http://localhost:8000/health
+```
+
+**Access Grafana:**
+- Open browser: `http://<jetson-ip>:3000`
+- Login: `admin` / `<GRAFANA_ADMIN_PASSWORD>`
+
+### Step 12: Run Verification Script
+
+**Install verification dependencies:**
+```bash
+pip3 install -r scripts/requirements.txt
+```
+
+**Run verification:**
+```bash
+python3 scripts/verify_system_standalone.py
+```
+
+---
+
+**✅ Installation Complete!** 
+
+You can now proceed to the regular **Quick Start** section below for ongoing operations.
   
 **JetPack 6.2 Installation Guide (SDK Manager):**
 
@@ -115,7 +374,9 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 - **Do NOT store DB volumes on eMMC** (will degrade hardware)
 - If using `./data_nvme` relative path, ensure the repository folder itself is on NVMe
 
-### Setup Steps
+### Setup Steps (If Already Installed - Skip to Step 8)
+
+**Note:** If this is your first time, see **"First Time Installation Guide"** section above.
 
 1. **Clone/Download Project**
    ```bash

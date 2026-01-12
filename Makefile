@@ -18,7 +18,7 @@ help:
 # Start all services
 up:
 	@echo "Starting ZERO platform services..."
-	docker compose -f infra/docker-compose.yml up -d
+	docker compose --env-file .env -f infra/docker-compose.yml up -d
 	@echo "Services started. Waiting for health checks..."
 	@sleep 5
 	@make status
@@ -26,7 +26,7 @@ up:
 # Stop all services
 down:
 	@echo "Stopping ZERO platform services..."
-	docker-compose -f infra/docker-compose.yml down
+	docker compose --env-file .env -f infra/docker-compose.yml down
 
 # View logs
 logs:

@@ -30,7 +30,7 @@ down:
 
 # View logs
 logs:
-	docker compose -f infra/docker-compose.yml logs -f
+	docker compose --env-file .env -f infra/docker-compose.yml logs -f
 
 # Connect to TimescaleDB
 psql:
@@ -38,28 +38,28 @@ psql:
 	@echo "Database: zero_trading"
 	@echo "User: zero_user"
 	@echo ""
-	docker compose -f infra/docker-compose.yml exec timescaledb psql -U zero_user -d zero_trading
+	docker compose --env-file .env -f infra/docker-compose.yml exec timescaledb psql -U zero_user -d zero_trading
 
 # Connect to Redis
 redis-cli:
 	@echo "Connecting to Redis..."
-	docker compose -f infra/docker-compose.yml exec redis redis-cli
+	docker compose --env-file .env -f infra/docker-compose.yml exec redis redis-cli
 
 # Restart all services
 restart:
 	@echo "Restarting ZERO platform services..."
-	docker compose -f infra/docker-compose.yml restart
+	docker compose --env-file .env -f infra/docker-compose.yml restart
 	@make status
 
 # Show service status
 status:
 	@echo "Service Status:"
 	@echo "==============="
-	docker compose -f infra/docker-compose.yml ps
+	docker compose --env-file .env -f infra/docker-compose.yml ps
 	@echo ""
 	@echo "Health Checks:"
 	@echo "=============="
-	@docker compose -f infra/docker-compose.yml ps --format json | grep -o '"Health":"[^"]*"' || echo "No health status available"
+	@docker compose --env-file .env -f infra/docker-compose.yml ps --format json | grep -o '"Health":"[^"]*"' || echo "No health status available"
 
 # Clean everything (WARNING: removes all data)
 clean:
@@ -68,7 +68,7 @@ clean:
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker compose -f infra/docker-compose.yml down -v; \
+		docker compose --env-file .env -f infra/docker-compose.yml down -v; \
 		rm -rf data_nvme/*; \
 		echo "Cleaned."; \
 	else \
@@ -78,5 +78,11 @@ clean:
 # Validate init.sql (syntax check)
 validate-sql:
 	@echo "Validating init.sql syntax..."
-	@docker compose -f infra/docker-compose.yml run --rm timescaledb psql -U zero_user -d zero_trading -f /docker-entrypoint-initdb.d/init.sql --dry-run || echo "Note: Dry-run may not work, but SQL will be validated on first run"
+	@docker compose --env-file .env -f infra/docker-compose.yml run --rm timescaledb psql -U zero_user -d zero_trading -f /docker-entrypoint-initdb.d/init.sql --dry-run || echo "Note: Dry-run may not work, but SQL will be validated on first run"
+
+# Initialize database schema (run if tables are missing)
+init-db:
+	@echo "Initializing database schema..."
+	@docker compose --env-file .env -f infra/docker-compose.yml exec -T timescaledb psql -U zero_user -d zero_trading -f /docker-entrypoint-initdb.d/init.sql
+	@echo "✅ Database schema initialized"
 

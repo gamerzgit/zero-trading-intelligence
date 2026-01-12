@@ -9,11 +9,7 @@ project_root = os.path.join(os.path.dirname(__file__), '../../../')
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-try:
-    import redis.asyncio as aioredis
-except ImportError:
-    # Fallback for older redis versions
-    import aioredis
+import redis.asyncio as aioredis
 
 from typing import Optional
 from datetime import datetime

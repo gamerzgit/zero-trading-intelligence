@@ -13,12 +13,12 @@ COPY services/scanner/requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy service code
-COPY services/scanner/ ./services/scanner/
-COPY contracts/ ./contracts/
+# Copy service code (same structure as ingest/regime)
+COPY services/scanner/ /app/
+COPY contracts/ /app/contracts/
 
-# Set working directory to service
-WORKDIR /app/services/scanner
+# Set Python path
+ENV PYTHONPATH=/app
 
 # Run service
 CMD ["python", "main.py"]

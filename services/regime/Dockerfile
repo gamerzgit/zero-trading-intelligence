@@ -19,6 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY services/regime/ /app/
 COPY contracts/ /app/contracts/
 
+# Set Python path
+ENV PYTHONPATH=/app
+
 # Expose health endpoint
 EXPOSE 8000
 

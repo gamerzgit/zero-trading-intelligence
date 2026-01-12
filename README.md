@@ -83,6 +83,20 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
   - Docker & Docker Compose
   - NVIDIA Container Toolkit
   - Make (optional, for convenience)
+  
+**Jetson SDK Components (Included with JetPack 6.2):**
+- ✅ **CUDA Toolkit** - Included (for future ML model GPU acceleration)
+- ✅ **TensorRT** - Included (for future ML model optimization)
+- ✅ **cuDNN** - Included (for deep learning operations)
+- ❌ **DeepStream** - Not needed (video analytics not required)
+- ❌ **VisionWorks** - Not needed (computer vision not required)
+
+**Jetson Platform Services (Recommended):**
+- ✅ **System Monitoring** - Pre-installed (for thermal/power monitoring)
+- ✅ **Power Management** - Pre-installed (MAXN mode support)
+- ✅ **Jetson Stats** - Optional but recommended (system health monitoring)
+  
+**Note:** For Milestones 0-2 (current), only Docker and Python are required. TensorRT/CUDA will be needed for future milestones (ML models, LLM inference).
 
 **CRITICAL - Storage Location:**
 - Ensure `data_nvme/` is located on NVMe mount (example: `/mnt/nvme/zero/data_nvme`)

@@ -22,8 +22,14 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from contracts.schemas import CandidateList, MarketState, HealthCheck
-from horizon import get_all_horizons, get_horizon_info
-from filters import ScannerFilters
+
+try:
+    from horizon import get_all_horizons, get_horizon_info
+    from filters import ScannerFilters
+except ImportError:
+    # Handle relative imports for Docker
+    from .horizon import get_all_horizons, get_horizon_info
+    from .filters import ScannerFilters
 
 # Configure logging
 logging.basicConfig(

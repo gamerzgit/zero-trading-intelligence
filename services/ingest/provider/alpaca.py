@@ -51,10 +51,16 @@ class AlpacaProvider(MarketDataProvider):
         if not self.connected:
             raise RuntimeError("Provider not connected")
         
+        import logging
+        logger = logging.getLogger(__name__)
+        backfill_done = False  # Track if we've done initial backfill
+        
         while True:
             now = datetime.utcnow()
             # Round down to previous minute (Alpaca aggregates with delay)
             candle_time = (now - timedelta(minutes=1)).replace(second=0, microsecond=0)
+            
+            no_data_count = 0  # Count symbols with no data
             
             for symbol in symbols:
                 try:
@@ -70,20 +76,12 @@ class AlpacaProvider(MarketDataProvider):
                         feed='iex'  # Use free IEX feed (no SIP subscription required)
                     )
                     
-                    import logging
-                    logger = logging.getLogger(__name__)
                     logger.debug(f"Fetching {symbol} from Alpaca: {fetch_start} to {fetch_end}")
                     
                     bars = self.client.get_stock_bars(request)
                     
                     if bars and symbol in bars and len(bars[symbol]) > 0:
                         logger.info(f"Received {len(bars[symbol])} bars for {symbol}")
-                    elif bars and symbol in bars:
-                        logger.debug(f"No new bars for {symbol} (market may be closed)")
-                    else:
-                        logger.debug(f"No data returned for {symbol}")
-                    
-                    if bars and symbol in bars:
                         for bar in bars[symbol]:
                             # Only yield if we haven't seen this bar before
                             bar_time = bar.timestamp.replace(tzinfo=None) if bar.timestamp.tzinfo else bar.timestamp
@@ -102,16 +100,70 @@ class AlpacaProvider(MarketDataProvider):
                                 
                                 self.last_fetch_time[symbol] = bar_time
                                 yield candle
+                    else:
+                        no_data_count += 1
+                        if bars and symbol in bars:
+                            logger.debug(f"No new bars for {symbol} (market may be closed)")
+                        else:
+                            logger.debug(f"No data returned for {symbol}")
                 
                 except Exception as e:
-                    import logging
-                    logger = logging.getLogger(__name__)
                     logger.warning(f"Error fetching {symbol} from Alpaca: {e}")
+                    no_data_count += 1
                     # Continue with next symbol
             
+            # If market is closed (no data for all symbols) and we haven't backfilled yet
+            # Fetch historical data from the most recent trading day
+            if no_data_count == len(symbols) and not backfill_done:
+                logger.info("Market appears closed - fetching historical data from last trading day...")
+                try:
+                    # Get yesterday's date (most recent trading day)
+                    yesterday = now - timedelta(days=1)
+                    # Market hours: 9:30 AM - 4:00 PM ET = 14:30 - 21:00 UTC
+                    market_open = yesterday.replace(hour=14, minute=30, second=0, microsecond=0)
+                    market_close = yesterday.replace(hour=21, minute=0, second=0, microsecond=0)
+                    
+                    # Fetch full day of data for all symbols
+                    for symbol in symbols:
+                        try:
+                            request = StockBarsRequest(
+                                symbol_or_symbols=[symbol],
+                                timeframe=TimeFrame.Minute,
+                                start=market_open,
+                                end=market_close,
+                                feed='iex'
+                            )
+                            
+                            bars = self.client.get_stock_bars(request)
+                            if bars and symbol in bars and len(bars[symbol]) > 0:
+                                logger.info(f"Backfilling {len(bars[symbol])} bars for {symbol} from {market_open.date()}")
+                                for bar in bars[symbol]:
+                                    bar_time = bar.timestamp.replace(tzinfo=None) if bar.timestamp.tzinfo else bar.timestamp
+                                    
+                                    # Only yield if we haven't seen this bar before
+                                    if symbol not in self.last_fetch_time or bar_time > self.last_fetch_time.get(symbol, datetime.min):
+                                        candle = Candle(
+                                            ticker=symbol,
+                                            time=bar_time,
+                                            open=float(bar.open),
+                                            high=float(bar.high),
+                                            low=float(bar.low),
+                                            close=float(bar.close),
+                                            volume=int(bar.volume),
+                                            source="alpaca"
+                                        )
+                                        
+                                        self.last_fetch_time[symbol] = bar_time
+                                        yield candle
+                        except Exception as e:
+                            logger.warning(f"Error backfilling {symbol}: {e}")
+                    
+                    backfill_done = True
+                    logger.info("Historical backfill complete")
+                except Exception as e:
+                    logger.warning(f"Error during historical backfill: {e}")
+            
             # Poll every minute
-            import logging
-            logger = logging.getLogger(__name__)
             logger.debug(f"Polling cycle complete, waiting 60 seconds...")
             await asyncio.sleep(60)
     

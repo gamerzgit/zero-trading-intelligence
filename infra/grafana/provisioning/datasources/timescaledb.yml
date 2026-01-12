@@ -7,8 +7,9 @@ datasources:
     url: timescaledb:5432
     database: zero_trading
     user: zero_user
-    # Password will be set via Grafana UI or environment variable
-    # Grafana provisioning doesn't expand ${} variables, so leave editable
+    # Password is configured via API using scripts/configure_grafana.py
+    # Run 'make configure-grafana' after Grafana starts to set the password
+    # Grafana provisioning files don't expand ${} environment variables
     secureJsonData:
       password: ""
     jsonData:

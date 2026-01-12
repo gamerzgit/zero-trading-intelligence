@@ -1,4 +1,4 @@
-.PHONY: help up down logs psql redis-cli clean restart status
+.PHONY: help up down logs psql redis-cli clean restart status configure-grafana
 
 # Default target
 help:
@@ -13,6 +13,7 @@ help:
 	@echo "  make restart     - Restart all services"
 	@echo "  make status      - Show service status"
 	@echo "  make clean       - Remove all containers, volumes, and data (Irreversible - Deletes NVMe Data)"
+	@echo "  make configure-grafana - Configure Grafana datasource with database password"
 	@echo ""
 
 # Start all services
@@ -87,3 +88,8 @@ init-db:
 		(echo "⚠️  Note: If database already initialized, some errors are expected (tables may already exist)" && exit 0)
 	@echo "✅ Database schema initialization completed"
 
+# Configure Grafana datasource
+configure-grafana:
+	@echo "Configuring Grafana TimescaleDB datasource..."
+	@python3 scripts/configure_grafana.py || \
+		(echo "⚠️  Make sure Grafana is running and .env file has POSTGRES_PASSWORD set" && exit 1)

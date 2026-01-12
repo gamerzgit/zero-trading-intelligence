@@ -19,7 +19,7 @@ if project_root not in sys.path:
 
 from provider import MarketDataProvider, MockProvider, PolygonProvider
 from db import DatabaseWriter
-from redis import RedisPublisher
+from redis_client import RedisPublisher
 
 # Configure logging
 logging.basicConfig(

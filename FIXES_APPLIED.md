@@ -19,23 +19,30 @@ docker compose --env-file .env -f infra/docker-compose.yml build --no-cache zero
 docker compose --env-file .env -f infra/docker-compose.yml up -d zero-ingest-price
 ```
 
-## Issue 2: Grafana Datasource Configuration ⚠️ PARTIALLY FIXED
+## Issue 2: Grafana Datasource Configuration ✅ FIXED
 
 **Issue**: Grafana provisioning files don't expand `${POSTGRES_PASSWORD}` environment variables.
 
-**Fix Applied**: 
-- Updated `infra/grafana/provisioning/datasources/timescaledb.yml` to make datasource editable
-- Removed invalid `${POSTGRES_PASSWORD}` reference
+**Fixes Applied**: 
+1. Updated `infra/grafana/provisioning/datasources/timescaledb.yml` to make datasource editable
+2. Removed invalid `${POSTGRES_PASSWORD}` reference
+3. Created `scripts/configure_grafana.py` to automatically configure datasource via Grafana API
+4. Added `make configure-grafana` command for easy configuration
 
 **Action Required**:
-After Grafana starts, manually configure the TimescaleDB datasource password:
+After Grafana starts, run:
+```bash
+make configure-grafana
+```
+
+This will automatically configure the TimescaleDB datasource with the password from your `.env` file.
+
+**Alternative**: You can also configure it manually through the Grafana UI:
 1. Access Grafana: `http://localhost:3000`
 2. Login with admin credentials
 3. Go to Configuration → Data Sources → TimescaleDB
 4. Enter the database password from your `.env` file
 5. Click "Save & Test"
-
-**Alternative**: The datasource is editable, so you can configure it through the UI after first startup.
 
 ## Verification Steps
 
@@ -72,6 +79,9 @@ After fixes:
 
 ## Files Modified
 
-1. `services/ingest/requirements.txt` - Updated redis package spec
+1. `services/ingest/requirements.txt` - Updated redis package spec to `redis[hiredis]>=5.0.0`
 2. `services/ingest/redis/publisher.py` - Verified import pattern (already correct)
 3. `infra/grafana/provisioning/datasources/timescaledb.yml` - Made datasource editable, removed invalid env var
+4. `scripts/configure_grafana.py` - NEW: Python script to configure datasource via Grafana API
+5. `scripts/requirements.txt` - Added `requests>=2.31.0` dependency
+6. `Makefile` - Added `configure-grafana` target

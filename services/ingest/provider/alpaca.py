@@ -70,7 +70,18 @@ class AlpacaProvider(MarketDataProvider):
                         feed='iex'  # Use free IEX feed (no SIP subscription required)
                     )
                     
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"Fetching {symbol} from Alpaca: {fetch_start} to {fetch_end}")
+                    
                     bars = self.client.get_stock_bars(request)
+                    
+                    if bars and symbol in bars and len(bars[symbol]) > 0:
+                        logger.info(f"Received {len(bars[symbol])} bars for {symbol}")
+                    elif bars and symbol in bars:
+                        logger.debug(f"No new bars for {symbol} (market may be closed)")
+                    else:
+                        logger.debug(f"No data returned for {symbol}")
                     
                     if bars and symbol in bars:
                         for bar in bars[symbol]:
@@ -99,6 +110,9 @@ class AlpacaProvider(MarketDataProvider):
                     # Continue with next symbol
             
             # Poll every minute
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Polling cycle complete, waiting 60 seconds...")
             await asyncio.sleep(60)
     
     async def health_check(self) -> bool:

@@ -1,6 +1,6 @@
 # ZERO Trading Intelligence Platform
 
-**Version:** Milestone 2 (Regime Engine)  
+**Version:** Milestone 3 (Scanner Engine)  
 **Last Updated:** 2026-01-11
 
 A probabilistic market intelligence platform (Decision Support System) running on NVIDIA Jetson Orin AGX.
@@ -27,7 +27,7 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 - ✅ Regime-conditioned
 - ✅ Designed for calibration via truth testing (implemented in future milestones)
 
-**Note:** Milestones 0-2 complete. Level 0 (Market Permission/Veto) is operational. Scanner and ranking engines coming in future milestones.
+**Note:** Milestones 0-3 complete. Level 0 (Market Permission/Veto) and Level 2 (Opportunity Discovery) are operational. Ranking and attention engines coming in future milestones.
 
 ---
 
@@ -64,15 +64,26 @@ ZERO is a **Quantitative Decision Support System (QDSS)** that provides:
 - ✅ Health endpoint (`/health` on port 8000)
 - ✅ Weekend/holiday detection (automatic RED/Halt)
 
+### Milestone 3: Scanner Engine (Level 2) ✅ COMPLETE
+- ✅ `zero-scanner` service implemented
+- ✅ MarketState veto-aware (RED = sleep, event-based wakeups)
+- ✅ Multi-horizon scanning (H30, H2H, HDAY, HWEEK)
+- ✅ Objective filters: Liquidity, Volatility, Structure (placeholder)
+- ✅ Event-based scanning (subscribes to `chan:market_state_changed`)
+- ✅ Redis publishing (`chan:active_candidates`, `key:active_candidates`)
+- ✅ Structured state storage (all horizons together, no overwrite)
+- ✅ Edge-based DB logging (`scanner_log` table - only changes)
+- ✅ Health endpoint (`/health` on port 8001)
+- ✅ Standardized filter output (forward-compatible for Milestone 4)
+
 **What's NOT Included (Future Milestones):**
 - ❌ Attention/Narrative engine (Level 1)
-- ❌ Scanner engine (Level 2)
 - ❌ Opportunity ranking / Probability engine (Level 3)
 - ❌ Trading execution
 
 ---
 
-## 🚀 Quick Start (Milestones 0-2)
+## 🚀 Quick Start (Milestones 0-3)
 
 ### Prerequisites
 
@@ -467,7 +478,25 @@ You can now proceed to the regular **Quick Start** section below for ongoing ope
    # PUBSUB CHANNELS chan:*
    ```
 
-10. **Run Comprehensive Verification Script**
+10. **Verify Scanner Service (Milestone 3)**
+   ```bash
+   # Check service status
+   make status
+   
+   # Check health endpoint
+   curl http://localhost:8001/health
+   
+   # Check logs
+   docker compose -f infra/docker-compose.yml logs zero-scanner
+   
+   # Verify scanner candidates in Redis
+   make redis-cli
+   # In redis-cli:
+   # GET key:active_candidates
+   # PUBSUB CHANNELS chan:*
+   ```
+
+11. **Run Comprehensive Verification Script**
    ```bash
    # Install verification script dependencies
    pip install -r scripts/requirements.txt
@@ -514,7 +543,8 @@ zero-trading-intelligence/
 │       └── provisioning/  # Grafana auto-config
 ├── services/              # Microservices
 │   ├── ingest/            # Price ingestion service (M1)
-│   └── regime/            # Regime engine service (M2)
+│   ├── regime/            # Regime engine service (M2)
+│   └── scanner/           # Scanner service (M3)
 ├── scripts/               # Utility scripts
 ├── data_nvme/             # Data storage (gitignored)
 ├── .env.example           # Environment template
@@ -561,6 +591,7 @@ docker compose -f infra/docker-compose.yml logs timescaledb
 - `candles_1m`, `candles_5m`, `candles_1d` (hypertables)
 - `ticks` (hypertable, 7-day retention)
 - `regime_log`, `attention_log` (hypertables)
+- `scanner_log` (Level 2 candidate detection)
 - `opportunity_log`, `performance_log`
 - `ingest_gap_log`
 
@@ -779,6 +810,67 @@ FROM regime_log
 GROUP BY state;
 ```
 
+### Milestone 3 Validation (Scanner Engine)
+
+**Check Scanner Service:**
+```bash
+# Health check
+curl http://localhost:8001/health
+
+# Expected response:
+# {
+#   "service": "zero-scanner",
+#   "status": "healthy",
+#   "last_update": "2026-01-11T20:00:00Z",
+#   "details": {
+#     "is_running": true,
+#     "last_scan_time": "2026-01-11T19:59:00Z",
+#     "current_candidates": {"H30": 5, "H2H": 8, "HDAY": 12, "HWEEK": 15},
+#     "market_state_seen": "GREEN",
+#     "last_market_state_timestamp": "2026-01-11T19:58:00Z"
+#   }
+# }
+```
+
+**Verify Scanner Candidates in Redis:**
+```bash
+make redis-cli
+```
+
+In redis-cli:
+```redis
+# Get current candidates (structured state)
+GET key:active_candidates
+
+# Check last scan time
+GET key:last_scan_time
+
+# Check channels
+PUBSUB CHANNELS chan:*
+# Should show: chan:active_candidates
+```
+
+**Verify Scanner Log in Database:**
+```bash
+make psql
+```
+
+In psql:
+```sql
+-- Check scanner log entries (edge-based - only changes)
+SELECT action, horizon, COUNT(*) as count
+FROM scanner_log
+GROUP BY action, horizon
+ORDER BY action, horizon;
+
+-- Check recent candidate additions
+SELECT ticker, horizon, action, time
+FROM scanner_log
+WHERE action = 'ADDED'
+ORDER BY time DESC
+LIMIT 10;
+```
+
 ### Ports Used
 
 - **TimescaleDB:** 5432
@@ -786,6 +878,7 @@ GROUP BY state;
 - **Grafana:** 3000
 - **Ingestion Service:** 8080
 - **Regime Engine Service:** 8000
+- **Scanner Service:** 8001
 
 ### Health Checks
 
@@ -795,6 +888,9 @@ curl http://localhost:8080/health
 
 # Regime engine service
 curl http://localhost:8000/health
+
+# Scanner service
+curl http://localhost:8001/health
 ```
 
 ### Market Hours vs Off-Hours Behavior
@@ -878,8 +974,8 @@ chmod -R 755 data_nvme/
 - ✅ **Milestone 0:** Architecture & Contracts
 - ✅ **Milestone 1:** Price ingestion service
 - ✅ **Milestone 2:** Regime engine (Level 0)
-- **Milestone 3:** Attention Engine (Level 1) - Attention state (score-based) + dominance signals
-- **Milestone 4:** Scanner (Level 2) - Candidate discovery
+- ✅ **Milestone 3:** Scanner (Level 2) - Candidate discovery
+- **Milestone 4:** Attention Engine (Level 1) - Attention state (score-based) + dominance signals
 - **Milestone 5:** Probability Engine (Level 3) - Ranking + probabilities
 - **Milestone 6:** Narrative Engine (Level 1b) + Truth Test & Calibration loop
 

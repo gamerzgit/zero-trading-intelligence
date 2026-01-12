@@ -93,7 +93,9 @@ class AlpacaProvider(MarketDataProvider):
                                 yield candle
                 
                 except Exception as e:
-                    print(f"Error fetching {symbol} from Alpaca: {e}")
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Error fetching {symbol} from Alpaca: {e}")
                     # Continue with next symbol
             
             # Poll every minute
@@ -106,18 +108,24 @@ class AlpacaProvider(MarketDataProvider):
         
         try:
             # Simple health check - try to fetch recent data for SPY
+            # Use a shorter window (last hour) to avoid rate limits
             end_time = datetime.utcnow()
-            start_time = end_time - timedelta(days=1)
+            start_time = end_time - timedelta(hours=1)
             
             request = StockBarsRequest(
                 symbol_or_symbols=["SPY"],
                 timeframe=TimeFrame.Minute,
                 start=start_time,
-                end=end_time
+                end=end_time,
+                feed='iex'
             )
             
             bars = self.client.get_stock_bars(request)
-            return bars is not None
-        except:
+            # Health check passes if we can make the API call (even if no data due to market closed)
+            return True  # API call succeeded
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Alpaca health check failed: {e}")
             return False
 

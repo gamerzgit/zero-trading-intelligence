@@ -117,71 +117,101 @@ class AlpacaProvider(MarketDataProvider):
             if no_data_count == len(symbols) and not backfill_done:
                 logger.info("Market appears closed - fetching historical data from last trading day...")
                 try:
-                    # Find most recent trading day (go back up to 7 days to find a weekday)
+                    # Find recent trading days (go back up to 7 days to find weekdays)
                     today = date.today()
-                    trading_day = None
+                    trading_days = []
                     for i in range(1, 8):  # Check last 7 days
                         check_date = today - timedelta(days=i)
                         # Skip weekends (Saturday=5, Sunday=6)
                         if check_date.weekday() < 5:  # Monday=0, Friday=4
-                            trading_day = check_date
-                            break
+                            trading_days.append(check_date)
                     
-                    if not trading_day:
-                        logger.warning("Could not find a recent trading day for backfill")
+                    if not trading_days:
+                        logger.warning("Could not find any recent trading days for backfill")
                         backfill_done = True
                     else:
-                        # Market hours: 9:30 AM - 4:00 PM ET
-                        # Alpaca API expects timezone-aware datetimes in UTC
-                        # ET is UTC-5 (EST) or UTC-4 (EDT), so 9:30 ET = 14:30 UTC (EST) or 13:30 UTC (EDT)
-                        # For simplicity, use 14:30 UTC (EST assumption)
-                        market_open_utc = datetime.combine(trading_day, datetime.min.time().replace(hour=14, minute=30)).replace(tzinfo=timezone.utc)
-                        market_close_utc = datetime.combine(trading_day, datetime.min.time().replace(hour=21, minute=0)).replace(tzinfo=timezone.utc)
-                        
-                        logger.info(f"Backfilling data for {trading_day} (ET: 9:30-16:00, UTC: {market_open_utc} - {market_close_utc})")
-                        
+                        logger.info(f"Found {len(trading_days)} potential trading days: {trading_days}")
                         total_bars = 0
-                        # Fetch full day of data for all symbols
-                        for symbol in symbols:
-                            try:
-                                request = StockBarsRequest(
-                                    symbol_or_symbols=[symbol],
-                                    timeframe=TimeFrame.Minute,
-                                    start=market_open_utc,
-                                    end=market_close_utc,
-                                    feed='iex'
-                                )
-                                
-                                logger.info(f"Requesting backfill for {symbol}...")
-                                bars = self.client.get_stock_bars(request)
-                                
-                                if bars and symbol in bars and len(bars[symbol]) > 0:
-                                    logger.info(f"✅ Backfilling {len(bars[symbol])} bars for {symbol} from {trading_day}")
-                                    total_bars += len(bars[symbol])
-                                    for bar in bars[symbol]:
-                                        bar_time = bar.timestamp.replace(tzinfo=None) if bar.timestamp.tzinfo else bar.timestamp
-                                        
-                                        # Only yield if we haven't seen this bar before
-                                        if symbol not in self.last_fetch_time or bar_time > self.last_fetch_time.get(symbol, datetime.min):
-                                            candle = Candle(
-                                                ticker=symbol,
-                                                time=bar_time,
-                                                open=float(bar.open),
-                                                high=float(bar.high),
-                                                low=float(bar.low),
-                                                close=float(bar.close),
-                                                volume=int(bar.volume),
-                                                source="alpaca"
-                                            )
-                                            
-                                            self.last_fetch_time[symbol] = bar_time
-                                            yield candle
-                                else:
-                                    logger.warning(f"⚠️  No bars returned for {symbol} on {trading_day}")
-                            except Exception as e:
-                                logger.error(f"❌ Error backfilling {symbol}: {e}", exc_info=True)
+                        backfill_success = False
                         
-                        logger.info(f"Historical backfill complete: {total_bars} total bars across {len(symbols)} symbols")
+                        # Try each trading day until we get data
+                        for trading_day in trading_days:
+                            if backfill_success:
+                                break
+                                
+                            # Market hours: 9:30 AM - 4:00 PM ET
+                            # Alpaca API expects timezone-aware datetimes in UTC
+                            # ET is UTC-5 (EST) or UTC-4 (EDT), so 9:30 ET = 14:30 UTC (EST) or 13:30 UTC (EDT)
+                            # For simplicity, use 14:30 UTC (EST assumption)
+                            market_open_utc = datetime.combine(trading_day, datetime.min.time().replace(hour=14, minute=30)).replace(tzinfo=timezone.utc)
+                            market_close_utc = datetime.combine(trading_day, datetime.min.time().replace(hour=21, minute=0)).replace(tzinfo=timezone.utc)
+                            
+                            logger.info(f"Trying backfill for {trading_day} (ET: 9:30-16:00, UTC: {market_open_utc} - {market_close_utc})")
+                            
+                            day_bars = 0
+                            # Fetch full day of data for all symbols
+                            for symbol in symbols:
+                                try:
+                                    # Try with IEX feed first (free, no SIP subscription)
+                                    request = StockBarsRequest(
+                                        symbol_or_symbols=[symbol],
+                                        timeframe=TimeFrame.Minute,
+                                        start=market_open_utc,
+                                        end=market_close_utc,
+                                        feed='iex'
+                                    )
+                                    
+                                    bars = self.client.get_stock_bars(request)
+                                    
+                                    # Handle different response structures
+                                    bars_list = None
+                                    if bars:
+                                        if isinstance(bars, dict) and symbol in bars:
+                                            bars_list = bars[symbol]
+                                        elif hasattr(bars, symbol):
+                                            bars_list = getattr(bars, symbol)
+                                        elif hasattr(bars, 'data') and isinstance(bars.data, dict) and symbol in bars.data:
+                                            bars_list = bars.data[symbol]
+                                    
+                                    if bars_list and len(bars_list) > 0:
+                                        logger.info(f"✅ Backfilling {len(bars_list)} bars for {symbol} from {trading_day}")
+                                        day_bars += len(bars_list)
+                                        total_bars += len(bars_list)
+                                        for bar in bars_list:
+                                            bar_time = bar.timestamp.replace(tzinfo=None) if bar.timestamp.tzinfo else bar.timestamp
+                                            
+                                            # Only yield if we haven't seen this bar before
+                                            if symbol not in self.last_fetch_time or bar_time > self.last_fetch_time.get(symbol, datetime.min):
+                                                candle = Candle(
+                                                    ticker=symbol,
+                                                    time=bar_time,
+                                                    open=float(bar.open),
+                                                    high=float(bar.high),
+                                                    low=float(bar.low),
+                                                    close=float(bar.close),
+                                                    volume=int(bar.volume),
+                                                    source="alpaca"
+                                                )
+                                                
+                                                self.last_fetch_time[symbol] = bar_time
+                                                yield candle
+                                    else:
+                                        logger.debug(f"No bars returned for {symbol} on {trading_day} (may be holiday)")
+                                except Exception as e:
+                                    logger.warning(f"Error backfilling {symbol} for {trading_day}: {e}")
+                            
+                            # If we got data for this day, mark as success
+                            if day_bars > 0:
+                                logger.info(f"✅ Successfully backfilled {day_bars} bars from {trading_day}")
+                                backfill_success = True
+                                break
+                            else:
+                                logger.info(f"⚠️  No data for {trading_day}, trying next trading day...")
+                        
+                        if total_bars > 0:
+                            logger.info(f"✅ Historical backfill complete: {total_bars} total bars across {len(symbols)} symbols")
+                        else:
+                            logger.warning(f"⚠️  Historical backfill attempted but no data found for any trading day")
                         backfill_done = True
                 except Exception as e:
                     logger.error(f"❌ Error during historical backfill: {e}", exc_info=True)

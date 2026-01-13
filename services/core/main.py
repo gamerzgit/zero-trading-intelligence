@@ -311,25 +311,28 @@ class ZeroCoreLogicService:
     async def publish_opportunity_rank(self, opportunity_rank: OpportunityRank):
         """Publish opportunity rank to Redis"""
         if not self.redis_client:
+            logger.warning("⚠️  Redis client not available, skipping publish")
             return
         
         try:
-            # Publish to channel
+            # Publish to channel (per Milestone 4 spec: chan:opportunity_update)
             channel = "chan:opportunity_update"
-            payload = opportunity_rank.model_dump_json().encode('utf-8')
-            await self.redis_client.publish(channel, payload)
+            payload_json = opportunity_rank.model_dump_json()
+            payload_bytes = payload_json.encode('utf-8')
+            
+            subscribers = await self.redis_client.publish(channel, payload_bytes)
+            logger.info(f"📤 Published to {channel} ({subscribers} subscribers)")
             
             # Store in key with TTL (60 seconds as per contract)
             key = "key:opportunity_rank"
             await self.redis_client.setex(
                 key,
                 60,  # TTL: 60 seconds
-                opportunity_rank.model_dump_json().encode('utf-8')
+                payload_bytes
             )
-            
-            logger.debug(f"✅ Published opportunity rank for {opportunity_rank.horizon}")
+            logger.info(f"💾 Stored {key} with TTL=60s ({len(opportunity_rank.opportunities)} opportunities)")
         except Exception as e:
-            logger.error(f"❌ Failed to publish opportunity rank: {e}")
+            logger.error(f"❌ Failed to publish opportunity rank: {e}", exc_info=True)
     
     async def write_opportunity_log(self, opportunities: List[Opportunity]):
         """Write Top 5 opportunities to database"""

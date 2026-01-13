@@ -72,7 +72,7 @@ These channels publish complete data payloads for real-time market data ingestio
 | Channel Name | Type | Publisher | Subscribers | Payload Structure |
 |-------------|------|-----------|-------------|-------------------|
 | `chan:active_candidates` | PubSub | zero-scanner | zero-core-logic | `CandidateList` (see schemas.py) |
-| `chan:opportunity_rank` | PubSub | zero-core-logic | zero-urgency | `OpportunityRank` (see schemas.py) |
+| `chan:opportunity_update` | PubSub | zero-core-logic | zero-urgency | `OpportunityRank` (see schemas.py) |
 | `chan:urgency_flags` | PubSub | zero-urgency | (internal only) | `UrgencyFlags` (see schemas.py) |
 
 **Note:** Grafana does NOT subscribe to Redis channels. Grafana reads from TimescaleDB only. If Grafana needs to display these values, they must be written to TimescaleDB tables (e.g., `ops_metrics` or `system_state_log`).

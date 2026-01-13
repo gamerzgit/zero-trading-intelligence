@@ -389,16 +389,33 @@ class ZeroCoreLogicService:
         else:
             logger.warning("⚠️  Could not load initial MarketState from Redis")
         
+        loop_count = 0
         while self.is_running:
+            loop_count += 1
+            # Log every 60 seconds (60 iterations * 1 second timeout)
+            if loop_count % 60 == 0:
+                logger.info(f"💓 Listen loop active (iteration {loop_count}), waiting for messages...")
             try:
                 message = await self.redis_pubsub.get_message(timeout=1.0)
                 
+                if message:
+                    msg_type = message.get('type')
+                    channel = message.get('channel')
+                    if isinstance(channel, bytes):
+                        channel = channel.decode('utf-8')
+                    logger.info(f"📬 Received Redis message: type={msg_type}, channel={channel}")
+                    
+                    # Handle subscription confirmation
+                    if msg_type == 'subscribe':
+                        logger.info(f"✅ Subscription confirmed for channel: {channel}")
+                    
                 if message and message['type'] == 'message':
                     try:
                         # Parse CandidateList
                         data = message['data']
                         if isinstance(data, bytes):
                             data = data.decode('utf-8')
+                        logger.info(f"📄 Raw message data: {data[:200]}...")  # Log first 200 chars
                         payload = json.loads(data)
                         candidate_list = CandidateList(**payload)
                         

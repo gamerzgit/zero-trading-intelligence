@@ -222,6 +222,31 @@ services:
     networks:
       - zero-network
 
+  # Dashboard Service (Milestone 5)
+  zero-dashboard:
+    build:
+      context: ..
+      dockerfile: services/dashboard/Dockerfile
+    container_name: zero-dashboard
+    environment:
+      # Redis
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+    ports:
+      - "${DASHBOARD_PORT:-8501}:8501"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - zero-network
+
 networks:
   zero-network:
     driver: bridge

@@ -301,9 +301,11 @@ class ZeroCoreLogicService:
         self.last_ranking_time = rank_time
         
         # Publish to Redis
+        logger.info(f"📡 Publishing opportunity rank to Redis...")
         await self.publish_opportunity_rank(opportunity_rank)
         
         # Write Top 5 to database
+        logger.info(f"💾 Writing opportunities to database...")
         await self.write_opportunity_log(opportunities[:5])
         
         logger.info(f"✅ Ranked {len(opportunities)} opportunities for {candidate_list.horizon}")
@@ -315,24 +317,39 @@ class ZeroCoreLogicService:
             return
         
         try:
+            # Test connection
+            await self.redis_client.ping()
+            
             # Publish to channel (per Milestone 4 spec: chan:opportunity_update)
             channel = "chan:opportunity_update"
             payload_json = opportunity_rank.model_dump_json()
             payload_bytes = payload_json.encode('utf-8')
             
+            logger.info(f"🔄 Attempting to publish to {channel} and store key:opportunity_rank...")
+            
+            # Publish to channel (redis.asyncio accepts strings for channel names)
             subscribers = await self.redis_client.publish(channel, payload_bytes)
             logger.info(f"📤 Published to {channel} ({subscribers} subscribers)")
             
             # Store in key with TTL (60 seconds as per contract)
-            key = "key:opportunity_rank"
+            # redis.asyncio accepts strings for key names
             await self.redis_client.setex(
-                key,
+                "key:opportunity_rank",
                 60,  # TTL: 60 seconds
                 payload_bytes
             )
-            logger.info(f"💾 Stored {key} with TTL=60s ({len(opportunity_rank.opportunities)} opportunities)")
+            logger.info(f"💾 Stored key:opportunity_rank with TTL=60s ({len(opportunity_rank.opportunities)} opportunities)")
+            
+            # Verify it was stored
+            stored = await self.redis_client.get("key:opportunity_rank")
+            if stored:
+                logger.info(f"✅ Verified: key:opportunity_rank exists in Redis")
+            else:
+                logger.warning(f"⚠️  Warning: key:opportunity_rank not found after SETEX")
+                
         except Exception as e:
             logger.error(f"❌ Failed to publish opportunity rank: {e}", exc_info=True)
+            # Don't raise - allow service to continue even if Redis publish fails
     
     async def write_opportunity_log(self, opportunities: List[Opportunity]):
         """Write Top 5 opportunities to database"""

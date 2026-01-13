@@ -136,27 +136,23 @@ class ZeroCoreLogicService:
             return None
         
         try:
-            if table == "candles_1m":
-                interval = f"{lookback_periods} minutes"
-            elif table == "candles_5m":
-                interval = f"{lookback_periods * 5} minutes"
-            elif table == "candles_1d":
-                interval = f"{lookback_periods} days"
-            else:
-                return None
-            
+            # Fetch the most recent N candles regardless of time
+            # This ensures we get enough data even if candles are older
             query = f"""
                 SELECT time, open, high, low, close, volume
                 FROM {table}
                 WHERE ticker = $1
-                AND time >= NOW() - INTERVAL '{interval}'
-                ORDER BY time ASC
+                ORDER BY time DESC
+                LIMIT $2
             """
             
-            rows = await self.db_pool.fetch(query, ticker)
+            rows = await self.db_pool.fetch(query, ticker, lookback_periods)
             
             if not rows:
                 return None
+            
+            # Reverse to get chronological order (oldest first)
+            rows = list(reversed(rows))
             
             # Convert to DataFrame
             data = {

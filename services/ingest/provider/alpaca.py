@@ -76,13 +76,23 @@ class AlpacaProvider(MarketDataProvider):
                         feed='iex'  # Use free IEX feed (no SIP subscription required)
                     )
                     
-                    logger.debug(f"Fetching {symbol} from Alpaca: {fetch_start} to {fetch_end}")
+                    logger.info(f"Fetching {symbol} from Alpaca: {fetch_start} to {fetch_end}")
                     
                     bars = self.client.get_stock_bars(request)
                     
-                    if bars and symbol in bars and len(bars[symbol]) > 0:
-                        logger.info(f"Received {len(bars[symbol])} bars for {symbol}")
-                        for bar in bars[symbol]:
+                    # Handle different response structures
+                    bars_list = None
+                    if bars:
+                        if isinstance(bars, dict) and symbol in bars:
+                            bars_list = bars[symbol]
+                        elif hasattr(bars, symbol):
+                            bars_list = getattr(bars, symbol)
+                        elif hasattr(bars, 'data') and isinstance(bars.data, dict) and symbol in bars.data:
+                            bars_list = bars.data[symbol]
+                    
+                    if bars_list and len(bars_list) > 0:
+                        logger.info(f"✅ Received {len(bars_list)} bars for {symbol}")
+                        for bar in bars_list:
                             # Only yield if we haven't seen this bar before
                             bar_time = bar.timestamp.replace(tzinfo=None) if bar.timestamp.tzinfo else bar.timestamp
                             
@@ -102,10 +112,10 @@ class AlpacaProvider(MarketDataProvider):
                                 yield candle
                     else:
                         no_data_count += 1
-                        if bars and symbol in bars:
-                            logger.debug(f"No new bars for {symbol} (market may be closed)")
+                        if bars_list is not None:
+                            logger.info(f"⚠️  No new bars for {symbol} (empty response)")
                         else:
-                            logger.debug(f"No data returned for {symbol}")
+                            logger.info(f"⚠️  No data returned for {symbol} (market may be closed or API returned None)")
                 
                 except Exception as e:
                     logger.warning(f"Error fetching {symbol} from Alpaca: {e}")
@@ -218,7 +228,7 @@ class AlpacaProvider(MarketDataProvider):
                     backfill_done = True  # Mark as done to avoid retrying
             
             # Poll every minute
-            logger.debug(f"Polling cycle complete, waiting 60 seconds...")
+            logger.info(f"Polling cycle complete (no_data_count={no_data_count}/{len(symbols)}), waiting 60 seconds...")
             await asyncio.sleep(60)
     
     async def health_check(self) -> bool:

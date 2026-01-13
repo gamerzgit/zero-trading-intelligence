@@ -4,7 +4,7 @@ Calculates opportunity scores (0-100) based on momentum, volatility, liquidity, 
 Uses penalties (not bonuses) for MarketState adjustments
 """
 
-from typing import Dict, Any, Literal
+from typing import Dict, Any, Literal, Tuple
 import logging
 
 logger = logging.getLogger(__name__)

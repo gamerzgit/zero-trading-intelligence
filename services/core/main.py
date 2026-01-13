@@ -377,7 +377,14 @@ class ZeroCoreLogicService:
         if not self.redis_pubsub:
             return
         
-        logger.info("👂 Listening for scanner updates...")
+        logger.info("👂 Listening for scanner updates on chan:active_candidates...")
+        
+        # Load initial market state
+        initial_state = await self.load_market_state()
+        if initial_state:
+            logger.info(f"📊 Initial MarketState: {initial_state.state} ({initial_state.reason})")
+        else:
+            logger.warning("⚠️  Could not load initial MarketState from Redis")
         
         while self.is_running:
             try:
@@ -391,6 +398,8 @@ class ZeroCoreLogicService:
                             data = data.decode('utf-8')
                         payload = json.loads(data)
                         candidate_list = CandidateList(**payload)
+                        
+                        logger.info(f"📨 Received CandidateList for {candidate_list.horizon} with {len(candidate_list.candidates)} candidates")
                         
                         # Process update
                         await self.process_scanner_update(candidate_list)

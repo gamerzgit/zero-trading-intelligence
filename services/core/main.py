@@ -193,12 +193,14 @@ class ZeroCoreLogicService:
                 if horizon in ["HDAY", "HWEEK"]:
                     candles_1d = await self.fetch_candles(ticker, "candles_1d", lookback_periods=20)
                 
+                logger.info(f"📊 Fetched candles for {ticker}: 1m={len(candles_1m) if candles_1m is not None else 0}, 5m={len(candles_5m) if candles_5m is not None else 0}")
+                
                 if candles_1m is None or len(candles_1m) < 20:
-                    logger.debug(f"⚠️  Insufficient 1m data for {ticker}")
+                    logger.info(f"⚠️  Skipping {ticker}: Insufficient 1m data ({len(candles_1m) if candles_1m is not None else 0} candles, need 20+)")
                     continue
                 
                 if candles_5m is None or len(candles_5m) < 20:
-                    logger.debug(f"⚠️  Insufficient 5m data for {ticker}")
+                    logger.info(f"⚠️  Skipping {ticker}: Insufficient 5m data ({len(candles_5m) if candles_5m is not None else 0} candles, need 20+)")
                     continue
                 
                 # Extract features from multiple timeframes
@@ -212,7 +214,7 @@ class ZeroCoreLogicService:
                 atr = features.get('atr_5m', 0.0)
                 
                 if atr == 0.0 or current_price == 0.0:
-                    logger.debug(f"⚠️  Invalid price/ATR for {ticker}")
+                    logger.info(f"⚠️  Skipping {ticker}: Invalid price/ATR (price={current_price}, atr={atr})")
                     continue
                 
                 # Enrich with confidence and ATR levels
@@ -253,6 +255,7 @@ class ZeroCoreLogicService:
                 )
                 
                 opportunities.append(opportunity)
+                logger.info(f"✅ Created opportunity for {ticker} ({horizon}): score={opportunity.opportunity_score:.2f}, confidence={enriched['confidence_band']}")
                 
             except Exception as e:
                 logger.warning(f"⚠️  Error ranking {ticker}: {e}", exc_info=True)

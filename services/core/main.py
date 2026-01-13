@@ -457,7 +457,7 @@ async def health_handler(request):
     """Health check HTTP handler"""
     service = request.app['service']
     health = await service.health_check()
-    return web.json_response(health.model_dump())
+    return web.json_response(health.model_dump(mode='json'))
 
 
 async def init_app():

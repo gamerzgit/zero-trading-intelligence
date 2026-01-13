@@ -119,7 +119,12 @@ class ZeroCoreLogicService:
                 if isinstance(state_json, bytes):
                     state_json = state_json.decode('utf-8')
                 state_dict = json.loads(state_json)
-                return MarketState(**state_dict)
+                market_state = MarketState(**state_dict)
+                # Update cached state
+                self.market_state = market_state
+                return market_state
+            else:
+                logger.debug("⚠️  No market state found in Redis (key:market_state is empty)")
         except Exception as e:
             logger.warning(f"⚠️  Failed to load market state: {e}")
         
@@ -267,7 +272,7 @@ class ZeroCoreLogicService:
         
         # VETO: If MarketState is RED, do not rank/publish
         if market_state.state == "RED":
-            logger.info("🚫 MarketState is RED - vetoing ranking")
+            logger.info(f"🚫 MarketState is RED ({market_state.reason}) - vetoing ranking")
             return
         
         logger.info(f"📊 Ranking {len(candidate_list.candidates)} candidates for {candidate_list.horizon}")

@@ -183,6 +183,45 @@ services:
     networks:
       - zero-network
 
+  # Core Logic Service (Milestone 4)
+  zero-core-logic:
+    build:
+      context: ..
+      dockerfile: services/core/Dockerfile
+    container_name: zero-core-logic
+    environment:
+      # Database
+      DB_HOST: ${DB_HOST:-timescaledb}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-zero_trading}
+      DB_USER: ${DB_USER:-zero_user}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # Redis
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      # API
+      CORE_API_PORT: ${CORE_API_PORT:-8002}
+    ports:
+      - "${CORE_API_PORT:-8002}:8002"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      zero-regime:
+        condition: service_started
+      zero-scanner:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - zero-network
+
 networks:
   zero-network:
     driver: bridge

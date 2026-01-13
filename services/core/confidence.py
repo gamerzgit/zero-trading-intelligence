@@ -4,7 +4,7 @@ Converts opportunity scores to confidence bands (LOW/MED/HIGH) and confidence_pc
 NOTE: This is heuristic until Milestone 6 (Truth Test calibration)
 """
 
-from typing import Literal, Tuple
+from typing import Literal, Tuple, Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)

@@ -20,7 +20,7 @@ project_root = os.path.join(os.path.dirname(__file__), '../../')
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from contracts.schemas import OpportunityRank, MarketState, HealthCheck
+from contracts.schemas import OpportunityRank, MarketState, HealthCheck, TradeUpdate
 from alpaca.trading.enums import OrderSide
 
 from risk import RiskManager
@@ -281,9 +281,16 @@ class ZeroExecutionService:
             return
         
         try:
-            # Get market state snapshot
-            market_state = await self.risk_manager.get_market_state()
-
+            # Get market state snapshot and convert to MarketState schema
+            market_state_dict = await self.risk_manager.get_market_state()
+            market_state_obj = None
+            if market_state_dict:
+                try:
+                    market_state_obj = MarketState(**market_state_dict)
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to parse market state: {e}, using dict")
+                    market_state_obj = None
+            
             # Ensure execution_id is always present for logging. Fall back deterministically if not provided.
             if not execution_id:
                 base_ticker = opportunity.ticker if opportunity else "UNKNOWN"
@@ -294,26 +301,26 @@ class ZeroExecutionService:
                     opportunity_rank.rank_time,
                 )
             
-            # Build trade update payload
-            trade_update = {
-                "schema_version": "1.0",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "execution_id": execution_id,
-                "status": status,
-                # DB logging requires non-null ticker; use a sentinel if we don't have one
-                "ticker": opportunity.ticker if opportunity else "UNKNOWN",
-                "horizon": opportunity.horizon if opportunity else opportunity_rank.horizon,
-                "probability": opportunity.probability if opportunity else None,
-                "opportunity_score": opportunity.opportunity_score if opportunity else None,
-                "alpaca_order_id": alpaca_order_id,
-                "market_state": market_state,
-                "why": [reason] + (opportunity.why if opportunity and opportunity.why else []),
-                "submitted_at": datetime.now(timezone.utc).isoformat()
-            }
+            # Build trade update payload using TradeUpdate schema
+            trade_update_obj = TradeUpdate(
+                execution_id=execution_id,
+                ticker=opportunity.ticker if opportunity else "UNKNOWN",
+                horizon=opportunity.horizon if opportunity else opportunity_rank.horizon,
+                probability=opportunity.probability if opportunity else None,
+                opportunity_score=opportunity.opportunity_score if opportunity else None,
+                status=status,
+                alpaca_order_id=alpaca_order_id,
+                market_state=market_state_obj,
+                why=[reason] + (opportunity.why if opportunity and opportunity.why else []),
+                submitted_at=datetime.now(timezone.utc)
+            )
+            
+            # Convert to dict for JSON serialization
+            trade_update = trade_update_obj.model_dump(mode='json')
             
             # Publish to channel
             channel = "chan:trade_update"
-            payload = json.dumps(trade_update).encode('utf-8')
+            payload = trade_update_obj.model_dump_json().encode('utf-8')
             subscribers = await self.redis_client.publish(channel, payload)
             
             logger.info(f"📤 Published trade_update: {status} for {opportunity.ticker if opportunity else 'N/A'}")
@@ -352,7 +359,7 @@ class ZeroExecutionService:
                     trade_update.get('status'),
                     trade_update.get('alpaca_order_id'),
                     json.dumps(trade_update.get('why', [])),
-                    json.dumps(trade_update.get('market_state'))
+                    json.dumps(trade_update.get('market_state') if trade_update.get('market_state') else None)
                 )
             logger.debug(f"💾 Wrote execution_log entry: {trade_update.get('execution_id')}")
         except Exception as e:

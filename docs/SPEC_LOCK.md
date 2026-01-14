@@ -8,7 +8,7 @@
 
 ## 0. NON-GOALS (What ZERO Is NOT)
 
-1. **NOT a trading bot** - ZERO does NOT execute trades (no buy/sell orders)
+1. **NOT a trading bot** - ZERO does NOT execute LIVE trades by default; execution is an opt-in paper-only gateway (Milestone 6) for testing and validation purposes only
 2. **NOT an automated trading system** - No entry/exit optimization for automation
 3. **NOT a deterministic price predictor** - No fixed price targets
 4. **NOT a guarantee system** - No claims of guaranteed outcomes

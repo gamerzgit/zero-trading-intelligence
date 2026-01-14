@@ -6,7 +6,7 @@ Last Updated: 2026-01-11
 All message schemas for Redis Pub/Sub, HTTP API, and internal communication.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field
 
@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 class BaseSchema(BaseModel):
     """Base schema with version and timestamp"""
     schema_version: str = Field(default="1.0", description="Schema version")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="ISO 8601 timestamp")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="ISO 8601 timestamp (UTC)")
 
     class Config:
         json_encoders = {
@@ -145,7 +145,7 @@ class TradeUpdate(BaseSchema):
     opportunity_score: Optional[float] = Field(None, ge=0, le=100, description="Opportunity score")
     status: Literal["SUBMITTED", "BLOCKED", "SKIPPED", "REJECTED", "ERROR"] = Field(..., description="Execution status")
     alpaca_order_id: Optional[str] = Field(None, description="Alpaca order ID if submitted")
-    market_state: Optional[Dict[str, Any]] = Field(None, description="Market state snapshot at execution time")
+    market_state: Optional[MarketState] = Field(None, description="Market state snapshot at execution time")
     why: Optional[List[str]] = Field(None, description="Array of reason strings")
     submitted_at: datetime = Field(..., description="When execution was attempted")
 
@@ -154,7 +154,7 @@ class TradeUpdate(BaseSchema):
 # STAND-DOWN SIGNALS
 # ============================================================================
 
-class StandDownReason(BaseSchema):
+class StandDownSignal(BaseSchema):
     """Stand-Down Signal (Do Not Trade)"""
     reason: str = Field(..., description="Reason for stand-down")
     scope: Literal["GLOBAL", "SECTOR", "TICKER"] = Field(..., description="Scope of stand-down")
@@ -240,7 +240,7 @@ class QueryResponse(BaseSchema):
     attention_state: AttentionState = Field(..., description="Current attention state")
     narrative_state: Optional[NarrativeState] = Field(None, description="Current narrative state")
     opportunities: List[Opportunity] = Field(..., description="Opportunities by horizon")
-    stand_down: Optional[StandDownReason] = Field(None, description="Stand-down reason if applicable")
+    stand_down: Optional[StandDownSignal] = Field(None, description="Stand-down reason if applicable")
 
 
 # ============================================================================

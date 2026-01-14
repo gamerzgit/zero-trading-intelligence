@@ -231,7 +231,38 @@
 
 ---
 
-### 9. `performance_log` (Truth Test Results)
+### 9. `execution_log` (Trade Execution History)
+
+**Purpose:** Log all trade execution attempts (Level 6)  
+**Type:** Regular PostgreSQL table  
+**Retention:** KEEP FOREVER
+
+| Column Name | Type | Constraints | Description |
+|------------|------|-------------|-------------|
+| `id` | BIGSERIAL | PRIMARY KEY | Auto-increment ID |
+| `time` | TIMESTAMPTZ | NOT NULL, INDEX | Timestamp when event occurred |
+| `execution_id` | TEXT | NOT NULL, UNIQUE | Unique ID for this execution event |
+| `ticker` | VARCHAR(10) | NOT NULL, INDEX | Stock symbol |
+| `horizon` | VARCHAR(10) | NOT NULL | H30, H2H, HDAY, or HWEEK |
+| `probability` | NUMERIC(5,4) | NULL | Probability at time of decision |
+| `opportunity_score` | NUMERIC(5,2) | NULL | Opportunity score at time of decision |
+| `status` | VARCHAR(20) | NOT NULL | SUBMITTED, BLOCKED, SKIPPED, REJECTED, ERROR |
+| `alpaca_order_id` | TEXT | NULL | Alpaca order ID if submitted |
+| `why` | JSONB | NULL | Explanation list |
+| `market_state_snapshot` | JSONB | NULL | Snapshot of market state at decision time |
+| `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Record creation timestamp |
+
+**Indexes:**
+- Primary key: `id`
+- Index on `time` for time-range queries
+- Index on `execution_id` for unique lookup
+- Index on `ticker` for ticker-specific queries
+- Index on `status` for status-based queries
+- Index on `(time, ticker)` for performance queries
+
+---
+
+### 10. `performance_log` (Truth Test Results)
 
 **Purpose:** Store truth test outcomes (MFE/MAE results)  
 **Type:** Regular PostgreSQL table  

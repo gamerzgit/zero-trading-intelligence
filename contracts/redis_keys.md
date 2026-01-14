@@ -95,7 +95,7 @@ These channels publish complete data payloads for real-time market data ingestio
 | `key:market_state` | String (JSON) | zero-regime | All services | None | `MarketState` (see schemas.py) |
 | `key:attention_state` | String (JSON) | zero-attention | zero-core-logic, zero-urgency | None | `AttentionState` (see schemas.py) |
 | `key:narrative_state` | String (JSON) | zero-narrative-llm | zero-core-logic | None | `NarrativeState` (see schemas.py) |
-| `key:stand_down_reason` | String (JSON) | zero-regime, zero-urgency | All services | None | `StandDownReason` (see schemas.py) |
+| `key:stand_down_reason` | String (JSON) | zero-regime, zero-urgency | All services | None | `StandDownSignal` (see schemas.py) |
 
 ### Ephemeral State Keys (With TTL)
 
@@ -169,7 +169,7 @@ All payload structures are defined in `/contracts/schemas.py` as Pydantic models
 - `MarketState`: Level 0 permission state (GREEN/YELLOW/RED) - stored in `key:market_state`
 - `AttentionState`: Level 1 attention state (score-based, 0-100) - stored in `key:attention_state`
 - `NarrativeState`: Level 1 narrative state (LLM output) - stored in `key:narrative_state`
-- `StandDownReason`: Stand-down signal with reason - stored in `key:stand_down_reason`
+- `StandDownSignal`: Stand-down signal with reason - stored in `key:stand_down_reason`
 - `CandidateList`: Level 2 scanner output (list of candidates) - stored in `key:active_candidates`
 - `Opportunity`: Level 3 opportunity (with probability)
 - `OpportunityRank`: Top-N ranked opportunities - stored in `key:opportunity_rank`

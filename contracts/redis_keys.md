@@ -72,7 +72,8 @@ These channels publish complete data payloads for real-time market data ingestio
 | Channel Name | Type | Publisher | Subscribers | Payload Structure |
 |-------------|------|-----------|-------------|-------------------|
 | `chan:active_candidates` | PubSub | zero-scanner | zero-core-logic | `CandidateList` (see schemas.py) |
-| `chan:opportunity_update` | PubSub | zero-core-logic | zero-urgency | `OpportunityRank` (see schemas.py) |
+| `chan:opportunity_update` | PubSub | zero-core-logic | zero-execution | `OpportunityRank` (see schemas.py) |
+| `chan:trade_update` | PubSub | zero-execution | (monitoring) | `TradeUpdate` (see schemas.py) |
 | `chan:urgency_flags` | PubSub | zero-urgency | (internal only) | `UrgencyFlags` (see schemas.py) |
 
 **Note:** Grafana does NOT subscribe to Redis channels. Grafana reads from TimescaleDB only. If Grafana needs to display these values, they must be written to TimescaleDB tables (e.g., `ops_metrics` or `system_state_log`).
@@ -101,12 +102,17 @@ These channels publish complete data payloads for real-time market data ingestio
 | Key Name | Type | Writer | Readers | TTL | Payload Structure |
 |----------|------|--------|---------|-----|-------------------|
 | `key:active_candidates` | String (JSON) | zero-scanner | zero-core-logic | 300s (5 min) | `CandidateList` (see schemas.py) |
-| `key:opportunity_rank` | String (JSON) | zero-core-logic | (internal) | Horizon-dependent | `OpportunityRank` (see schemas.py) |
+| `key:opportunity_rank` | String (JSON) | zero-core-logic | zero-execution | 60s | `OpportunityRank` (see schemas.py) |
+| `key:execution_enabled` | String | (manual/config) | zero-execution | None | "true" or "false" (kill switch) |
+| `key:execution_seen:<id>` | String | zero-execution | zero-execution | 24h | "1" (idempotency tracking) |
+| `key:execution_cooldown:<ticker>` | String | zero-execution | zero-execution | 60m | ISO timestamp |
 | `key:urgency_flags` | String (JSON) | zero-urgency | (internal) | 120s (2 min) | `UrgencyFlags` (see schemas.py) |
 
 **TTL Rules:**
 - `active_candidates`: 300s (candidates refresh every scan cycle)
-- `opportunity_rank`: TTL = horizon duration (H30: 3600s, H2H: 14400s, HDAY: 86400s)
+- `opportunity_rank`: 60s (per Milestone 4 contract)
+- `execution_seen:<id>`: 24h (idempotency tracking)
+- `execution_cooldown:<ticker>`: 60m (cooldown period)
 - `urgency_flags`: 120s (urgency changes frequently)
 
 ### Configuration Keys

@@ -133,6 +133,24 @@ class UrgencyFlags(BaseSchema):
 
 
 # ============================================================================
+# LEVEL 6: EXECUTION (Paper Only, Opt-In)
+# ============================================================================
+
+class TradeUpdate(BaseSchema):
+    """Execution event (trade placement result)"""
+    execution_id: str = Field(..., description="Deterministic execution ID for idempotency")
+    ticker: Optional[str] = Field(None, description="Stock symbol")
+    horizon: Optional[Literal["H30", "H2H", "HDAY", "HWEEK"]] = Field(None, description="Time horizon")
+    probability: Optional[float] = Field(None, ge=0.0, le=1.0, description="Opportunity probability")
+    opportunity_score: Optional[float] = Field(None, ge=0, le=100, description="Opportunity score")
+    status: Literal["SUBMITTED", "BLOCKED", "SKIPPED", "REJECTED", "ERROR"] = Field(..., description="Execution status")
+    alpaca_order_id: Optional[str] = Field(None, description="Alpaca order ID if submitted")
+    market_state: Optional[Dict[str, Any]] = Field(None, description="Market state snapshot at execution time")
+    why: Optional[List[str]] = Field(None, description="Array of reason strings")
+    submitted_at: datetime = Field(..., description="When execution was attempted")
+
+
+# ============================================================================
 # STAND-DOWN SIGNALS
 # ============================================================================
 

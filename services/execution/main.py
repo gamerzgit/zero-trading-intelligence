@@ -130,6 +130,19 @@ class ZeroExecutionService:
     async def process_opportunity(self, opportunity_rank: OpportunityRank):
         """Process an opportunity and potentially execute a trade"""
         try:
+            # Determine top opportunity early so BLOCKED/SKIPPED events can still be logged
+            top_opportunity = opportunity_rank.opportunities[0] if opportunity_rank.opportunities else None
+
+            # Generate a deterministic execution_id for logging/idempotency purposes.
+            # If we have a top opportunity, use it. Otherwise fall back to a sentinel ticker.
+            execution_id_base_ticker = top_opportunity.ticker if top_opportunity else "UNKNOWN"
+            execution_id_base_horizon = top_opportunity.horizon if top_opportunity else opportunity_rank.horizon
+            execution_id = self.risk_manager.generate_execution_id(
+                execution_id_base_ticker,
+                execution_id_base_horizon,
+                opportunity_rank.rank_time,
+            )
+
             # 1. Check kill switch
             execution_enabled = await self.check_execution_enabled()
             if not execution_enabled:
@@ -137,7 +150,9 @@ class ZeroExecutionService:
                 await self.publish_trade_update(
                     status="BLOCKED",
                     reason="Execution disabled (kill switch)",
-                    opportunity_rank=opportunity_rank
+                    opportunity_rank=opportunity_rank,
+                    opportunity=top_opportunity,
+                    execution_id=execution_id,
                 )
                 return
             
@@ -148,16 +163,17 @@ class ZeroExecutionService:
                 await self.publish_trade_update(
                     status="BLOCKED",
                     reason=veto_reason,
-                    opportunity_rank=opportunity_rank
+                    opportunity_rank=opportunity_rank,
+                    opportunity=top_opportunity,
+                    execution_id=execution_id,
                 )
                 return
             
             # 3. Get top opportunity (rank == 1)
-            if not opportunity_rank.opportunities:
+            if not top_opportunity:
                 logger.debug("No opportunities in rank")
                 return
-            
-            top_opportunity = opportunity_rank.opportunities[0]  # Already sorted by rank
+            # Already sorted by rank
             
             # 4. Check probability threshold (>= 0.90)
             if top_opportunity.probability < 0.90:
@@ -166,16 +182,12 @@ class ZeroExecutionService:
                     status="BLOCKED",
                     reason=f"Probability {top_opportunity.probability:.4f} below threshold 0.90",
                     opportunity_rank=opportunity_rank,
-                    opportunity=top_opportunity
+                    opportunity=top_opportunity,
+                    execution_id=execution_id,
                 )
                 return
             
             # 5. Check idempotency
-            execution_id = self.risk_manager.generate_execution_id(
-                top_opportunity.ticker,
-                top_opportunity.horizon,
-                opportunity_rank.rank_time
-            )
             is_new, was_set = await self.risk_manager.check_idempotency(execution_id)
             if not is_new:
                 logger.info(f"🚫 Duplicate execution_id: {execution_id}")
@@ -271,6 +283,16 @@ class ZeroExecutionService:
         try:
             # Get market state snapshot
             market_state = await self.risk_manager.get_market_state()
+
+            # Ensure execution_id is always present for logging. Fall back deterministically if not provided.
+            if not execution_id:
+                base_ticker = opportunity.ticker if opportunity else "UNKNOWN"
+                base_horizon = opportunity.horizon if opportunity else opportunity_rank.horizon
+                execution_id = self.risk_manager.generate_execution_id(
+                    base_ticker,
+                    base_horizon,
+                    opportunity_rank.rank_time,
+                )
             
             # Build trade update payload
             trade_update = {
@@ -278,7 +300,8 @@ class ZeroExecutionService:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "execution_id": execution_id,
                 "status": status,
-                "ticker": opportunity.ticker if opportunity else None,
+                # DB logging requires non-null ticker; use a sentinel if we don't have one
+                "ticker": opportunity.ticker if opportunity else "UNKNOWN",
                 "horizon": opportunity.horizon if opportunity else opportunity_rank.horizon,
                 "probability": opportunity.probability if opportunity else None,
                 "opportunity_score": opportunity.opportunity_score if opportunity else None,

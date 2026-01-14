@@ -54,7 +54,7 @@ class ZeroScannerService:
         self.redis_port = int(os.getenv('REDIS_PORT', '6379'))
         
         self.scan_interval = int(os.getenv('SCAN_INTERVAL_SECONDS', '60'))  # Scan every 60 seconds
-        self.scan_universe = self._load_scan_universe()
+        self.scan_universe: List[str] = []  # Will be loaded from Alpaca API in connect_redis()
         
         # Components
         self.db_pool: Optional[asyncpg.Pool] = None
@@ -72,26 +72,73 @@ class ZeroScannerService:
         self.scan_event = asyncio.Event()  # For event-based wakeups
         
     def _load_scan_universe(self) -> List[str]:
-        """Load scan universe (default: S&P 500)"""
-        # Default universe - can be expanded later
-        default_universe = [
-            # Major indices
-            "SPY", "QQQ", "IWM", "DIA",
-            # Tech
-            "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD",
-            # Finance
-            "JPM", "BAC", "GS", "MS",
-            # Healthcare
-            "JNJ", "PFE", "UNH",
-            # Consumer
-            "WMT", "HD", "NKE",
-            # Energy
-            "XOM", "CVX",
-            # And more... (expand to 500+ in production)
-        ]
+        """
+        Load scan universe from Alpaca API (all tradeable stocks)
+        Falls back to Redis key:scan_universe if Alpaca unavailable
+        """
+        # Try to load from Redis first (cached)
+        # If not available, fetch from Alpaca API
+        return []  # Will be loaded async in connect_redis()
+    
+    async def _fetch_universe_from_alpaca(self) -> List[str]:
+        """
+        Fetch tradeable stocks from Alpaca Assets API
         
-        # TODO: Load from Redis key:scan_universe or config file
-        return default_universe
+        Returns:
+            List of ticker symbols (e.g., ['AAPL', 'MSFT', ...])
+        """
+        try:
+            from alpaca.trading.client import TradingClient
+            from alpaca.trading.enums import AssetClass, AssetStatus
+            
+            # Initialize TradingClient (uses same credentials as data client)
+            trading_client = TradingClient(
+                api_key=os.getenv('ALPACA_API_KEY'),
+                secret_key=os.getenv('ALPACA_SECRET_KEY'),
+                paper=True  # Paper mode for data access
+            )
+            
+            # Get all active US equity assets
+            logger.info("📡 Fetching tradeable stocks from Alpaca Assets API...")
+            assets = trading_client.get_all_assets(
+                asset_class=AssetClass.US_EQUITY,
+                status=AssetStatus.ACTIVE
+            )
+            
+            # Extract ticker symbols
+            tickers = [asset.symbol for asset in assets if asset.tradable]
+            
+            logger.info(f"✅ Loaded {len(tickers)} tradeable stocks from Alpaca")
+            return tickers
+            
+        except ImportError:
+            logger.warning("⚠️  alpaca-py not available - cannot fetch universe from Alpaca")
+            return []
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch universe from Alpaca: {e}")
+            # Fallback to Redis or default
+            return await self._load_universe_from_redis()
+    
+    async def _load_universe_from_redis(self) -> List[str]:
+        """Load universe from Redis key:scan_universe (if cached)"""
+        if not self.redis_client:
+            return []
+        
+        try:
+            universe_json = await self.redis_client.get("key:scan_universe")
+            if universe_json:
+                if isinstance(universe_json, bytes):
+                    universe_json = universe_json.decode('utf-8')
+                universe_data = json.loads(universe_json)
+                if isinstance(universe_data, list):
+                    logger.info(f"✅ Loaded {len(universe_data)} tickers from Redis key:scan_universe")
+                    return universe_data
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to load universe from Redis: {e}")
+        
+        # Final fallback: minimal default (only if Alpaca and Redis both fail)
+        logger.warning("⚠️  Using minimal fallback universe (Alpaca and Redis unavailable)")
+        return ["SPY", "QQQ", "IWM", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA"]
     
     async def connect_db(self):
         """Connect to TimescaleDB"""
@@ -111,7 +158,7 @@ class ZeroScannerService:
             raise
     
     async def connect_redis(self):
-        """Connect to Redis"""
+        """Connect to Redis and load scan universe from Alpaca API"""
         try:
             self.redis_client = redis.Redis(
                 host=self.redis_host,
@@ -120,6 +167,21 @@ class ZeroScannerService:
             )
             await self.redis_client.ping()
             logger.info("✅ Connected to Redis")
+            
+            # Load scan universe from Alpaca API (or Redis cache)
+            self.scan_universe = await self._fetch_universe_from_alpaca()
+            
+            # Cache in Redis for next time (TTL 24 hours)
+            if self.scan_universe:
+                await self.redis_client.setex(
+                    "key:scan_universe",
+                    86400,  # 24 hours
+                    json.dumps(self.scan_universe).encode('utf-8')
+                )
+                logger.info(f"✅ Cached {len(self.scan_universe)} tickers in Redis key:scan_universe")
+            else:
+                logger.warning("⚠️  Scan universe is empty - scanner will not find any candidates")
+                
         except Exception as e:
             logger.error(f"❌ Failed to connect to Redis: {e}")
             raise

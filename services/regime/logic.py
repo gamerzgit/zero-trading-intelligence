@@ -143,11 +143,11 @@ class RegimeCalculator:
     
     def get_volatility_zone(self, vix_level: Optional[float], source_label: str) -> Tuple[str, str]:
         """
-        Classify volatility zone
+        Classify volatility zone based on VIX level from Alpaca API
         
         Args:
-            vix_level: VIX level (or proxy estimate)
-            source_label: "VIX" or "VIXY_PROXY" or "UNAVAILABLE"
+            vix_level: VIX level (from Alpaca API - VIX_ALPACA or VIXY_ALPACA)
+            source_label: "VIX_ALPACA", "VIXY_ALPACA", or "UNAVAILABLE"
             
         Returns:
             Tuple[str, str]: (zone, reason_suffix)
@@ -157,14 +157,15 @@ class RegimeCalculator:
         if vix_level is None:
             return "GREEN", ""  # Default to GREEN if unavailable
         
-        # Build reason suffix with source label
-        if source_label == "VIXY_PROXY":
-            source_text = f"VIX Proxy (VIXY)={vix_level:.2f}"
-        elif source_label == "VIX":
-            source_text = f"VIX={vix_level:.2f}"
+        # Build reason suffix with source label (from Alpaca)
+        if source_label == "VIXY_ALPACA":
+            source_text = f"VIX (via VIXY from Alpaca)={vix_level:.2f}"
+        elif source_label == "VIX_ALPACA":
+            source_text = f"VIX (from Alpaca)={vix_level:.2f}"
         else:
-            source_text = ""
+            source_text = f"Volatility={vix_level:.2f}"
         
+        # Standard VIX thresholds (from Alpaca data)
         if vix_level >= 25:
             reason = f"Volatility Halt (>=25)"
             if source_text:

@@ -43,50 +43,25 @@ class VolatilityProxy:
         """
         Fetch volatility level from Alpaca API
         
+        NOTE: VIX is an INDEX (CBOE Volatility Index), NOT a stock.
+        Alpaca StockHistoricalDataClient only provides STOCKS, not indices.
+        
         Strategy:
-        1. Try to get VIX directly from Alpaca (if available as symbol)
-        2. If not, use VIXY ETF price directly (don't convert - use thresholds based on VIXY levels)
-        3. Fallback to UNAVAILABLE
+        1. Use VIXY ETF (tracks VIX futures) from Alpaca
+        2. Convert VIXY price to approximate VIX level using proper relationship
+        3. VIXY is typically priced around $10-20 when VIX is 15-25
+        4. Relationship: VIXY ≈ VIX / 10 (roughly, but varies with contango)
         
         Returns:
-            Tuple[Optional[float], str]: (value, source_label)
-            - value: VIX level (if available) or VIXY price (if using proxy)
-            - source_label: "VIX_ALPACA", "VIXY_DIRECT", or "UNAVAILABLE"
+            Tuple[Optional[float], str]: (vix_level, source_label)
+            - vix_level: Approximate VIX level derived from VIXY
+            - source_label: "VIXY_ALPACA" or "UNAVAILABLE"
         """
         if not self.client:
             return None, "UNAVAILABLE"
         
-        # Strategy 1: Try VIX directly from Alpaca (might not be available, but worth trying)
-        try:
-            request = StockBarsRequest(
-                symbol_or_symbols=['VIX'],
-                timeframe=TimeFrame.Day,
-                limit=1,
-                feed='iex'
-            )
-            bars = self.client.get_stock_bars(request)
-            
-            bars_list = None
-            if bars:
-                if isinstance(bars, dict) and "VIX" in bars:
-                    bars_list = bars["VIX"]
-                elif hasattr(bars, "VIX"):
-                    bars_list = bars.VIX
-                elif hasattr(bars, "data") and isinstance(bars.data, dict) and "VIX" in bars.data:
-                    bars_list = bars.data["VIX"]
-                elif isinstance(bars, list):
-                    bars_list = bars
-            
-            if bars_list and len(bars_list) >= 1:
-                vix_level = float(bars_list[-1].close)
-                logger.info(f"✅ Fetched VIX directly from Alpaca: {vix_level:.2f}")
-                return vix_level, "VIX_ALPACA"
-        except Exception as e:
-            logger.debug(f"VIX not available directly from Alpaca: {e}")
-        
-        # Strategy 2: Use VIXY ETF price directly (don't convert - use VIXY-based thresholds)
-        # VIXY is a 1.5x leveraged ETF on VIX futures
-        # Instead of converting, we'll use VIXY price levels directly for thresholds
+        # VIX is an INDEX, not a stock - can't fetch directly from Alpaca Stock API
+        # Use VIXY ETF which tracks VIX futures (available as a stock)
         try:
             request = StockBarsRequest(
                 symbol_or_symbols=['VIXY'],
@@ -110,13 +85,26 @@ class VolatilityProxy:
             
             if bars_list and len(bars_list) >= 1:
                 vixy_price = float(bars_list[-1].close)
-                # Use VIXY price directly, but convert to approximate VIX for display
-                # VIXY ≈ VIX * 0.1 (rough approximation, varies with contango/backwardation)
-                # So VIX ≈ VIXY * 10 (but this is still approximate)
-                # Better: Use VIXY price with adjusted thresholds
-                # For now, convert for compatibility, but label clearly
-                vix_approx = vixy_price * 10  # Rough: VIXY $1.5 ≈ VIX 15
-                logger.info(f"✅ Using VIXY from Alpaca: ${vixy_price:.2f} (≈ VIX {vix_approx:.1f})")
+                
+                # VIXY is a 1.5x leveraged ETF on VIX futures
+                # Real relationship: VIXY typically trades roughly 1:1 with VIX in normal conditions
+                # Examples:
+                #   VIX = 15 → VIXY ≈ $10-15
+                #   VIX = 20 → VIXY ≈ $15-20
+                #   VIX = 25 → VIXY ≈ $20-25
+                # 
+                # The relationship is NOT linear and varies with contango/backwardation,
+                # but for regime detection purposes, we can use: VIX ≈ VIXY (1:1)
+                # 
+                # Sanity check: VIXY should be $5-30 range typically
+                if vixy_price < 1.0 or vixy_price > 50.0:
+                    logger.warning(f"⚠️  VIXY price ${vixy_price:.2f} seems unusual - may be data error")
+                
+                # Use 1:1 approximation (VIXY $15 ≈ VIX 15)
+                # This is reasonable for regime detection thresholds (20, 25)
+                vix_approx = vixy_price
+                
+                logger.info(f"✅ Using VIXY from Alpaca: ${vixy_price:.2f} → VIX ≈ {vix_approx:.1f} (1:1 approximation)")
                 return vix_approx, "VIXY_ALPACA"
             
             return None, "UNAVAILABLE"

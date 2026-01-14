@@ -158,10 +158,9 @@ class RegimeCalculator:
             return "GREEN", ""  # Default to GREEN if unavailable
         
         # Build reason suffix with source label (from Alpaca)
+        # NOTE: VIX is an index, not a stock - we use VIXY ETF as proxy
         if source_label == "VIXY_ALPACA":
-            source_text = f"VIX (via VIXY from Alpaca)={vix_level:.2f}"
-        elif source_label == "VIX_ALPACA":
-            source_text = f"VIX (from Alpaca)={vix_level:.2f}"
+            source_text = f"VIX≈{vix_level:.1f} (via VIXY ${vix_level:.2f} from Alpaca)"
         else:
             source_text = f"Volatility={vix_level:.2f}"
         

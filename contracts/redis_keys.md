@@ -75,6 +75,18 @@ These channels publish complete data payloads for real-time market data ingestio
 | `chan:opportunity_update` | PubSub | zero-core-logic | zero-execution | `OpportunityRank` (see schemas.py) |
 | `chan:trade_update` | PubSub | zero-execution | (monitoring) | `TradeUpdate` (see schemas.py) |
 | `chan:urgency_flags` | PubSub | zero-urgency | (internal only) | `UrgencyFlags` (see schemas.py) |
+| `chan:calibration_update` | PubSub | zero-truth-test | zero-dashboard | Calibration update notification (see below) |
+
+**Calibration Update Notification (chan:calibration_update):**
+```json
+{
+  "timestamp": "2026-01-15T21:05:00Z",
+  "degraded_horizons": ["H2H"],
+  "degraded_states": ["YELLOW"],
+  "confidence_multipliers": {"H30_GREEN_STABLE": 1.00},
+  "global_stats": {"global_pass_rate": 0.52, "global_shrink": 0.95}
+}
+```
 
 **Note:** Grafana does NOT subscribe to Redis channels. Grafana reads from TimescaleDB only. If Grafana needs to display these values, they must be written to TimescaleDB tables (e.g., `ops_metrics` or `system_state_log`).
 
@@ -121,7 +133,8 @@ These channels publish complete data payloads for real-time market data ingestio
 |----------|------|--------|---------|-----|-------------------|
 | `key:scan_universe` | String (JSON) | Config | zero-scanner | None | List of tickers |
 | `key:system_config` | String (JSON) | Config | All services | None | System configuration |
-| `key:calibration_state` | String (JSON) | zero-truth-test | zero-core-logic | None | Calibration factors (see below) |
+| `key:calibration_state` | String (JSON) | zero-truth-test | zero-core-logic | None | Full calibration state (see below) |
+| `key:confidence_multipliers` | String (JSON) | zero-truth-test | zero-core-logic | None | Per-bucket shrink factors for quick lookup |
 
 **Calibration State Payload (key:calibration_state):**
 ```json
@@ -136,17 +149,35 @@ These channels publish complete data payloads for real-time market data ingestio
       "total_signals": 150,
       "pass_count": 85,
       "fail_count": 65,
-      "pass_rate": 0.5667,
-      "shrink_factor": 1.00
+      "win_rate": 0.5667,
+      "avg_probability": 0.60,
+      "avg_mfe": 1.25,
+      "avg_mae": 0.85,
+      "shrink_factor": 1.00,
+      "deviation": 0.0333
     }
   },
+  "confidence_multipliers": {
+    "H30_GREEN_STABLE": 1.00,
+    "H30_GREEN_UNSTABLE": 0.90
+  },
+  "degraded_horizons": ["H2H"],
+  "degraded_states": ["YELLOW"],
   "global_stats": {
     "total_signals": 500,
     "global_pass_rate": 0.52,
+    "global_avg_probability": 0.55,
     "global_shrink": 0.95
   }
 }
 ```
+
+**Confidence Degradation Rules:**
+| Deviation (expected - observed) | Shrink Factor |
+|--------------------------------|---------------|
+| 5-10% | 0.90 (shrink by 10%) |
+| 10-20% | 0.75 (shrink by 25%) |
+| >20% | 0.50 (force conservative) |
 
 ### Cache Keys
 

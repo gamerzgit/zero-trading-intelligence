@@ -3,6 +3,17 @@ ZERO Truth Test - Calibration Engine
 
 Computes shrink factors based on historical pass rates.
 Per SPEC_LOCK §6.2: Only shrink probabilities, never boost above raw.
+
+CONFIDENCE DEGRADATION RULES (MANDATORY):
+- Deviation 5-10%:  Shrink by 10% (multiplier = 0.90)
+- Deviation 10-20%: Shrink by 25% (multiplier = 0.75)
+- Deviation >20%:   Force YELLOW regime bias (multiplier = 0.50)
+
+These adjustments:
+- Apply per bucket (horizon × market_state × attention_bucket)
+- Are multiplicative, not absolute
+- Are reversible if calibration recovers
+- NEVER increase probabilities beyond original
 """
 
 import logging
@@ -13,21 +24,26 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 
-def compute_shrink_factor(pass_rate: float, sample_size: int) -> float:
+def compute_shrink_factor(
+    observed_win_rate: float, 
+    expected_probability: float,
+    sample_size: int
+) -> float:
     """
-    Compute conservative shrink factor based on pass rate.
+    Compute shrink factor based on deviation between observed and expected.
     
-    Per SPEC_LOCK:
-    - Never boost above 1.0 (only shrink)
-    - More aggressive shrink for poor performance
-    - Require minimum sample size for confidence
+    Per SPEC_LOCK Confidence Degradation Rules:
+    - Deviation 5-10%:  Shrink by 10% (multiplier = 0.90)
+    - Deviation 10-20%: Shrink by 25% (multiplier = 0.75)
+    - Deviation >20%:   Force conservative (multiplier = 0.50)
     
     Args:
-        pass_rate: Actual pass rate (PASS / (PASS + FAIL))
+        observed_win_rate: Actual pass rate (PASS / (PASS + FAIL))
+        expected_probability: Average probability issued for this bucket
         sample_size: Number of signals in bucket
     
     Returns:
-        Shrink factor (0.0 to 1.0)
+        Shrink factor (0.0 to 1.0) - NEVER > 1.0
     """
     # Require minimum sample size for meaningful calibration
     MIN_SAMPLE_SIZE = 10
@@ -37,22 +53,31 @@ def compute_shrink_factor(pass_rate: float, sample_size: int) -> float:
         logger.info(f"Insufficient samples ({sample_size} < {MIN_SAMPLE_SIZE}), using default shrink=0.90")
         return 0.90
     
-    # Shrink factor based on pass rate
-    # More aggressive shrink for poor performance
-    if pass_rate < 0.35:
-        # Very poor performance - heavy shrink
+    # Calculate deviation: how much worse than expected?
+    # Positive deviation = we're overconfident (observed < expected)
+    if expected_probability > 0:
+        deviation = expected_probability - observed_win_rate
+    else:
+        deviation = 0.0
+    
+    # Apply degradation rules based on deviation
+    if deviation > 0.20:
+        # >20% deviation - Force YELLOW regime bias (heavy shrink)
         shrink = 0.50
-    elif pass_rate < 0.45:
-        # Below expectation - moderate shrink
-        shrink = 0.70
-    elif pass_rate < 0.50:
-        # Slightly below - light shrink
-        shrink = 0.85
-    elif pass_rate < 0.55:
-        # Around expected - minimal shrink
+        logger.warning(f"HEAVY SHRINK: deviation={deviation:.1%} > 20%, shrink=0.50")
+    elif deviation > 0.10:
+        # 10-20% deviation - Shrink by 25%
+        shrink = 0.75
+        logger.info(f"MODERATE SHRINK: deviation={deviation:.1%} (10-20%), shrink=0.75")
+    elif deviation > 0.05:
+        # 5-10% deviation - Shrink by 10%
+        shrink = 0.90
+        logger.info(f"LIGHT SHRINK: deviation={deviation:.1%} (5-10%), shrink=0.90")
+    elif deviation > 0:
+        # 0-5% deviation - Minimal shrink
         shrink = 0.95
     else:
-        # Good performance - no shrink (but never boost)
+        # Observed >= expected - no shrink needed (but NEVER boost)
         shrink = 1.00
     
     return shrink
@@ -89,11 +114,15 @@ def aggregate_calibration(
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "1.0",
         "buckets": {},
+        "confidence_multipliers": {},  # Per-bucket multipliers for easy lookup
+        "degraded_horizons": [],
+        "degraded_states": [],
         "global_stats": {
             "total_signals": 0,
             "total_pass": 0,
             "total_fail": 0,
             "global_pass_rate": 0.0,
+            "global_avg_probability": 0.0,
             "global_shrink": 1.0
         }
     }
@@ -101,6 +130,9 @@ def aggregate_calibration(
     total_signals = 0
     total_pass = 0
     total_fail = 0
+    total_prob_sum = 0.0
+    degraded_horizons = set()
+    degraded_states = set()
     
     for row in performance_data:
         horizon = row["horizon"]
@@ -117,8 +149,18 @@ def aggregate_calibration(
         if total == 0:
             continue
         
-        pass_rate = pass_count / total
-        shrink_factor = compute_shrink_factor(pass_rate, total)
+        win_rate = pass_count / total
+        avg_probability = float(row.get("avg_probability") or 0.5)
+        avg_mfe = float(row.get("avg_mfe") or 0)
+        avg_mae = float(row.get("avg_mae") or 0)
+        
+        # Compute shrink factor based on deviation
+        shrink_factor = compute_shrink_factor(win_rate, avg_probability, total)
+        
+        # Track degraded buckets
+        if shrink_factor < 1.0:
+            degraded_horizons.add(horizon)
+            degraded_states.add(regime)
         
         calibration["buckets"][bucket_key] = {
             "horizon": horizon,
@@ -128,35 +170,49 @@ def aggregate_calibration(
             "pass_count": pass_count,
             "fail_count": fail_count,
             "expired_count": int(row.get("expired_count") or 0),
-            "pass_rate": round(pass_rate, 4),
-            "avg_probability": round(float(row.get("avg_probability") or 0), 4),
-            "shrink_factor": shrink_factor
+            "win_rate": round(win_rate, 4),
+            "avg_probability": round(avg_probability, 4),
+            "avg_mfe": round(avg_mfe, 4),
+            "avg_mae": round(avg_mae, 4),
+            "shrink_factor": shrink_factor,
+            "deviation": round(avg_probability - win_rate, 4)
         }
+        
+        # Store multiplier for easy lookup
+        calibration["confidence_multipliers"][bucket_key] = shrink_factor
         
         total_signals += total
         total_pass += pass_count
         total_fail += fail_count
+        total_prob_sum += avg_probability * total
         
         logger.info(
-            f"Bucket {bucket_key}: {pass_count}/{total} = {pass_rate:.2%} pass rate, "
-            f"shrink={shrink_factor:.2f}"
+            f"Bucket {bucket_key}: win_rate={win_rate:.2%} vs expected={avg_probability:.2%}, "
+            f"shrink={shrink_factor:.2f}, avg_mfe={avg_mfe:.2f}, avg_mae={avg_mae:.2f}"
         )
     
     # Global stats
     if total_signals > 0:
-        global_pass_rate = total_pass / total_signals
+        global_win_rate = total_pass / total_signals
+        global_avg_prob = total_prob_sum / total_signals
         calibration["global_stats"]["total_signals"] = total_signals
         calibration["global_stats"]["total_pass"] = total_pass
         calibration["global_stats"]["total_fail"] = total_fail
-        calibration["global_stats"]["global_pass_rate"] = round(global_pass_rate, 4)
+        calibration["global_stats"]["global_pass_rate"] = round(global_win_rate, 4)
+        calibration["global_stats"]["global_avg_probability"] = round(global_avg_prob, 4)
         calibration["global_stats"]["global_shrink"] = compute_shrink_factor(
-            global_pass_rate, total_signals
+            global_win_rate, global_avg_prob, total_signals
         )
+    
+    calibration["degraded_horizons"] = list(degraded_horizons)
+    calibration["degraded_states"] = list(degraded_states)
     
     logger.info(
         f"Calibration complete: {len(calibration['buckets'])} buckets, "
         f"{total_signals} total signals, "
-        f"{calibration['global_stats']['global_pass_rate']:.2%} global pass rate"
+        f"win_rate={calibration['global_stats']['global_pass_rate']:.2%}, "
+        f"degraded_horizons={calibration['degraded_horizons']}, "
+        f"degraded_states={calibration['degraded_states']}"
     )
     
     return calibration

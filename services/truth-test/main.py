@@ -239,13 +239,44 @@ class TruthTestService:
             # Aggregate and compute shrink factors
             calibration_state = aggregate_calibration(performance_data)
             
-            # Publish to Redis
+            # 1. Publish to Redis key (for core service to read)
             await self.redis_client.set(
                 "key:calibration_state",
                 json.dumps(calibration_state)
             )
             
-            logger.info(f"✅ Published calibration state to Redis: {len(calibration_state['buckets'])} buckets")
+            # 2. Also store confidence_multipliers separately for easy lookup
+            await self.redis_client.set(
+                "key:confidence_multipliers",
+                json.dumps(calibration_state.get("confidence_multipliers", {}))
+            )
+            
+            # 3. Publish notification to chan:calibration_update (for dashboard)
+            update_notification = {
+                "timestamp": calibration_state["timestamp"],
+                "degraded_horizons": calibration_state.get("degraded_horizons", []),
+                "degraded_states": calibration_state.get("degraded_states", []),
+                "confidence_multipliers": calibration_state.get("confidence_multipliers", {}),
+                "global_stats": calibration_state.get("global_stats", {})
+            }
+            await self.redis_client.publish(
+                "chan:calibration_update",
+                json.dumps(update_notification)
+            )
+            
+            # 4. Persist snapshot to calibration_log (survives restarts)
+            try:
+                snapshot_id = await self.db.insert_calibration_snapshot(calibration_state)
+                logger.info(f"💾 Persisted calibration snapshot to DB: id={snapshot_id}")
+            except Exception as db_err:
+                # Don't fail the whole calibration if DB persist fails
+                logger.warning(f"⚠️  Failed to persist calibration to DB: {db_err}")
+            
+            logger.info(
+                f"✅ Calibration published: {len(calibration_state['buckets'])} buckets, "
+                f"degraded_horizons={calibration_state.get('degraded_horizons', [])}, "
+                f"degraded_states={calibration_state.get('degraded_states', [])}"
+            )
             
         except Exception as e:
             logger.error(f"❌ Failed to update calibration: {e}", exc_info=True)

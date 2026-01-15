@@ -100,12 +100,15 @@ class VolatilityProxy:
                 if vixy_price < 1.0 or vixy_price > 50.0:
                     logger.warning(f"⚠️  VIXY price ${vixy_price:.2f} seems unusual - may be data error")
                 
-                # Use 1:1 approximation (VIXY $15 ≈ VIX 15)
-                # This is reasonable for regime detection thresholds (20, 25)
-                vix_approx = vixy_price
+                # Return VIXY price directly (not converted to VIX)
+                # Thresholds in logic.py are adjusted for VIXY price levels:
+                #   GREEN: VIXY < $20
+                #   YELLOW: VIXY $20-25
+                #   RED: VIXY >= $25
+                # This avoids conversion errors and makes the system more transparent
                 
-                logger.info(f"✅ Using VIXY from Alpaca: ${vixy_price:.2f} → VIX ≈ {vix_approx:.1f} (1:1 approximation)")
-                return vix_approx, "VIXY_ALPACA"
+                logger.info(f"✅ Using VIXY from Alpaca: ${vixy_price:.2f} (using VIXY-based thresholds)")
+                return vixy_price, "VIXY_ALPACA"
             
             return None, "UNAVAILABLE"
             

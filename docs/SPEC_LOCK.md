@@ -15,6 +15,16 @@
 5. **NOT an HFT system** - No latency competition or high-frequency trading
 6. **NOT a sentiment-only system** - Narrative ≠ sentiment
 
+### 0.1 Execution Engine Addendum (Milestone 6)
+
+**Execution Engine is OPTIONAL and NOT required for ZERO Intelligence Platform compliance.**
+
+- Execution MUST be hard-disabled unless `ALPACA_PAPER=true` AND `key:execution_enabled=true`
+- Execution is paper-only by default (live trading is explicitly blocked)
+- The Intelligence Platform (Milestones 0-5) remains valid and functional without execution
+- Execution is a testing/validation gateway only, not a core component of the intelligence system
+- If execution is disabled, the platform continues to provide ranked opportunities, market state, and all intelligence outputs
+
 ---
 
 ## 1. HIERARCHY OVERRIDES (Strict Enforcement)

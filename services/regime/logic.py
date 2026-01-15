@@ -159,24 +159,31 @@ class RegimeCalculator:
         
         # Build reason suffix with source label (from Alpaca)
         # NOTE: VIX is an index, not a stock - we use VIXY ETF as proxy
+        # IMPORTANT: vix_level here is actually VIXY price (1:1 approximation)
+        # Use VIXY-based thresholds directly (don't convert to VIX)
         if source_label == "VIXY_ALPACA":
-            source_text = f"VIX≈{vix_level:.1f} (via VIXY ${vix_level:.2f} from Alpaca)"
+            source_text = f"VIXY=${vix_level:.2f} (VIX proxy from Alpaca)"
         else:
             source_text = f"Volatility={vix_level:.2f}"
         
-        # Standard VIX thresholds (from Alpaca data)
-        if vix_level >= 25:
-            reason = f"Volatility Halt (>=25)"
+        # VIXY-based thresholds (VIXY price directly, not converted VIX)
+        # VIXY typically trades $10-20 in normal conditions, $20-30 in elevated vol, $30+ in panic
+        # Adjusted thresholds for VIXY price:
+        #   GREEN: VIXY < $20 (normal/low vol)
+        #   YELLOW: VIXY $20-25 (elevated vol)
+        #   RED: VIXY >= $25 (high vol/panic)
+        if vix_level >= 25.0:
+            reason = f"Volatility Halt (VIXY >= $25)"
             if source_text:
                 reason += f" [{source_text}]"
             return "RED", reason
-        elif vix_level >= 20:
-            reason = f"Elevated Volatility (20-25)"
+        elif vix_level >= 20.0:
+            reason = f"Elevated Volatility (VIXY $20-25)"
             if source_text:
                 reason += f" [{source_text}]"
             return "YELLOW", reason
         else:
-            return "GREEN", source_text  # < 20 is GREEN zone
+            return "GREEN", source_text  # VIXY < $20 is GREEN zone
     
     def calculate_market_state(
         self,

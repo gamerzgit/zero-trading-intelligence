@@ -21,9 +21,14 @@ class BaseSchema(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="ISO 8601 timestamp (UTC)")
 
     class Config:
+        # Pydantic v1 style (for backward compatibility)
+        # Note: Pydantic v2 uses model_config, but we keep v1 style for now
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }
+        
+        # Pydantic v2 compatibility (if using v2, this will be ignored)
+        # For v2, use: model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
 
 # ============================================================================

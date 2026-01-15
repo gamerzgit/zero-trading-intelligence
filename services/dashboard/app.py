@@ -82,14 +82,15 @@ def format_traffic_light(state: str) -> str:
 def get_market_state_display(market_state: Optional[Dict[str, Any]]) -> tuple:
     """Get market state display info"""
     if not market_state:
-        return "UNKNOWN", "System Idle / Market Closed", None, None
+        return "UNKNOWN", "System Idle / Market Closed", None, None, None
     
     state = market_state.get('state', 'UNKNOWN')
     reason = market_state.get('reason', 'No reason provided')
-    vix_level = market_state.get('vix_level')
+    vix_level = market_state.get('vix_level')  # Real VIX (may be None)
+    vixy_price = market_state.get('vixy_price')  # VIXY ETF price
     timestamp = market_state.get('timestamp')
     
-    return state, reason, vix_level, timestamp
+    return state, reason, vix_level, vixy_price, timestamp
 
 def format_opportunities_table(opportunity_rank: Optional[Dict[str, Any]]) -> pd.DataFrame:
     """Format opportunities as DataFrame"""
@@ -175,14 +176,17 @@ def main():
     # Regime Status (Header)
     st.header("🚦 Regime Status")
     
-    state, reason, vix_level, timestamp = get_market_state_display(market_state)
+    state, reason, vix_level, vixy_price, timestamp = get_market_state_display(market_state)
     
     col1, col2 = st.columns([2, 3])
     
     with col1:
         st.markdown(format_traffic_light(state), unsafe_allow_html=True)
+        # Display VIX level if available, otherwise show VIXY price
         if vix_level is not None:
             st.metric("VIX Level", f"{vix_level:.2f}")
+        elif vixy_price is not None:
+            st.metric("VIXY Price", f"${vixy_price:.2f}", help="VIXY ETF price (volatility proxy, NOT VIX)")
     
     with col2:
         st.write(f"**Reason:** {reason}")

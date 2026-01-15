@@ -30,11 +30,13 @@ try:
     from features import extract_features
     from scoring import calculate_opportunity_score
     from confidence import enrich_opportunity
+    from query import QueryEngine
 except ImportError:
     # Handle relative imports for Docker
     from .features import extract_features
     from .scoring import calculate_opportunity_score
     from .confidence import enrich_opportunity
+    from .query import QueryEngine
 
 # Configure logging
 logging.basicConfig(
@@ -72,6 +74,9 @@ class ZeroCoreLogicService:
         self.current_rankings: Dict[str, OpportunityRank] = {}  # horizon -> OpportunityRank
         self.calibration_state: Optional[Dict[str, Any]] = None  # From key:calibration_state
         self.attention_state: Optional[Dict[str, Any]] = None  # From key:attention_state
+        
+        # Query Engine (SPEC_LOCK §5.2)
+        self.query_engine: Optional[QueryEngine] = None
         
     async def connect_db(self):
         """Connect to TimescaleDB"""
@@ -583,6 +588,10 @@ class ZeroCoreLogicService:
         await self.connect_db()
         await self.connect_redis()
         
+        # Initialize Query Engine
+        self.query_engine = QueryEngine(self)
+        logger.info("✅ Query Engine initialized")
+        
         self.is_running = True
         
         # Start listening for updates
@@ -635,12 +644,47 @@ async def health_handler(request):
     return web.json_response(health.model_dump(mode='json'))
 
 
+async def query_handler(request):
+    """
+    Query Mode endpoint - SPEC_LOCK §5.2
+    
+    GET /query?ticker=TSLA
+    
+    Returns eligibility, reason codes, and full breakdown.
+    """
+    service = request.app['service']
+    
+    ticker = request.query.get('ticker', '').upper()
+    if not ticker:
+        return web.json_response(
+            {"error": "Missing required parameter: ticker"},
+            status=400
+        )
+    
+    if not service.query_engine:
+        return web.json_response(
+            {"error": "Query engine not initialized"},
+            status=503
+        )
+    
+    try:
+        result = await service.query_engine.query_ticker(ticker)
+        return web.json_response(result.to_dict())
+    except Exception as e:
+        logger.error(f"Query error for {ticker}: {e}", exc_info=True)
+        return web.json_response(
+            {"error": str(e), "ticker": ticker},
+            status=500
+        )
+
+
 async def init_app():
     """Initialize aiohttp app"""
     app = web.Application()
     service = ZeroCoreLogicService()
     app['service'] = service
     app.router.add_get('/health', health_handler)
+    app.router.add_get('/query', query_handler)  # SPEC_LOCK §5.2
     return app, service
 
 

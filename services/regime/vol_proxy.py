@@ -81,17 +81,29 @@ class VolatilityProxy:
             )
             
             bars = self.client.get_stock_bars(request)
+            logger.info(f"📊 Alpaca response type: {type(bars)}, content: {bars}")
             
             bars_list = None
             if bars:
                 if isinstance(bars, dict) and "VIXY" in bars:
                     bars_list = bars["VIXY"]
+                    logger.info("Found VIXY in dict")
                 elif hasattr(bars, "VIXY"):
                     bars_list = bars.VIXY
+                    logger.info("Found VIXY as attribute")
                 elif hasattr(bars, "data") and isinstance(bars.data, dict) and "VIXY" in bars.data:
                     bars_list = bars.data["VIXY"]
+                    logger.info("Found VIXY in bars.data dict")
+                elif hasattr(bars, "data") and hasattr(bars.data, "get"):
+                    bars_list = bars.data.get("VIXY")
+                    logger.info(f"Tried bars.data.get('VIXY'): {bars_list}")
                 elif isinstance(bars, list):
                     bars_list = bars
+                    logger.info("bars is a list")
+                else:
+                    logger.warning(f"⚠️  Unknown bars format. Dir: {dir(bars)}")
+            else:
+                logger.warning("⚠️  Alpaca returned empty/None bars")
             
             if bars_list and len(bars_list) >= 1:
                 vixy_price = float(bars_list[-1].close)
@@ -110,10 +122,11 @@ class VolatilityProxy:
                 logger.info(f"✅ Fetched VIXY from Alpaca: ${vixy_price:.2f} (using VIXY-based thresholds, NOT VIX)")
                 return None, vixy_price, "VIXY_ALPACA"  # vix_level=None, vixy_price=value
             
+            logger.warning("⚠️  No VIXY bars found in response")
             return None, None, "UNAVAILABLE"
             
         except Exception as e:
-            logger.warning(f"Failed to fetch VIXY from Alpaca: {e}")
+            logger.error(f"❌ Failed to fetch VIXY from Alpaca: {e}", exc_info=True)
             return None, None, "UNAVAILABLE"
     
     def get_volatility_zone(self, vix_level: Optional[float]) -> Tuple[str, str]:

@@ -144,12 +144,27 @@ def extract_features(
         features['ema9_slope_1m'] = calculate_ema_slope(calculate_ema(close_1m, 9))
         features['rel_volume_1m'] = calculate_relative_volume(candles_1m['volume'])
         features['current_price'] = float(close_1m.iloc[-1])
+        
+        # VWAP calculation for direction detection
+        typical_price = (candles_1m['high'] + candles_1m['low'] + candles_1m['close']) / 3
+        cumulative_tp_vol = (typical_price * candles_1m['volume']).cumsum()
+        cumulative_vol = candles_1m['volume'].cumsum()
+        vwap = cumulative_tp_vol / cumulative_vol
+        features['vwap'] = float(vwap.iloc[-1]) if cumulative_vol.iloc[-1] > 0 else 0.0
+        
+        # Recent return for direction
+        if len(close_1m) >= 5:
+            features['recent_return_1m'] = float((close_1m.iloc[-1] / close_1m.iloc[-5] - 1) * 100)
+        else:
+            features['recent_return_1m'] = 0.0
     else:
         features['ema_aligned_1m'] = False
         features['ema_separation_1m'] = 0.0
         features['ema9_slope_1m'] = 0.0
         features['rel_volume_1m'] = 1.0
         features['current_price'] = 0.0
+        features['vwap'] = 0.0
+        features['recent_return_1m'] = 0.0
     
     # 5m features
     if len(candles_5m) >= 20:
@@ -160,6 +175,12 @@ def extract_features(
             candles_5m['high'], candles_5m['low'], close_5m
         )
         features['rel_volume_5m'] = calculate_relative_volume(candles_5m['volume'])
+        
+        # Recent return for direction (5m timeframe)
+        if len(close_5m) >= 5:
+            features['recent_return_5m'] = float((close_5m.iloc[-1] / close_5m.iloc[-5] - 1) * 100)
+        else:
+            features['recent_return_5m'] = 0.0
     else:
         features['ema_aligned_5m'] = False
         features['ema_separation_5m'] = 0.0
@@ -167,6 +188,7 @@ def extract_features(
         features['atr_5m'] = 0.0
         features['atr_expansion_5m'] = 0.0
         features['rel_volume_5m'] = 1.0
+        features['recent_return_5m'] = 0.0
     
     # Stability (1m vs 5m divergence)
     if len(candles_1m) >= 10 and len(candles_5m) >= 5:

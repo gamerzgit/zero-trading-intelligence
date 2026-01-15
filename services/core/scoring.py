@@ -2,12 +2,16 @@
 ZERO Core Logic - Scoring Engine
 Calculates opportunity scores (0-100) based on momentum, volatility, liquidity, and stability
 Uses penalties (not bonuses) for MarketState adjustments
+Includes direction detection (LONG/SHORT/NEUTRAL)
 """
 
 from typing import Dict, Any, Literal, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Direction type
+Direction = Literal["LONG", "SHORT", "NEUTRAL"]
 
 
 def score_momentum(features: Dict[str, Any]) -> float:
@@ -130,6 +134,92 @@ def score_stability(features: Dict[str, Any]) -> float:
     return score
 
 
+def detect_direction(features: Dict[str, Any]) -> Tuple[Direction, float, str]:
+    """
+    Detect trade direction based on momentum and price action.
+    
+    Returns:
+        (direction, confidence, reason)
+        - direction: "LONG", "SHORT", or "NEUTRAL"
+        - confidence: 0-100 how confident in direction
+        - reason: explanation
+    """
+    bullish_signals = 0
+    bearish_signals = 0
+    reasons = []
+    
+    # 1. EMA Alignment (strongest signal)
+    # Bullish: price > EMA9 > EMA21 (aligned upward)
+    # Bearish: price < EMA9 < EMA21 (aligned downward)
+    ema_aligned_1m = features.get('ema_aligned_1m', False)
+    ema_aligned_5m = features.get('ema_aligned_5m', False)
+    
+    # Check slope direction
+    slope_1m = features.get('ema9_slope_1m', 0.0)
+    slope_5m = features.get('ema9_slope_5m', 0.0)
+    
+    if slope_1m > 0 and slope_5m > 0:
+        bullish_signals += 2
+        reasons.append("EMAs sloping up")
+    elif slope_1m < 0 and slope_5m < 0:
+        bearish_signals += 2
+        reasons.append("EMAs sloping down")
+    
+    if ema_aligned_1m and ema_aligned_5m:
+        if slope_1m > 0:
+            bullish_signals += 2
+            reasons.append("EMA alignment bullish")
+        elif slope_1m < 0:
+            bearish_signals += 2
+            reasons.append("EMA alignment bearish")
+    
+    # 2. Price vs VWAP (if available)
+    current_price = features.get('current_price', 0)
+    vwap = features.get('vwap', 0)
+    if current_price > 0 and vwap > 0:
+        if current_price > vwap * 1.002:  # >0.2% above VWAP
+            bullish_signals += 1
+            reasons.append("Above VWAP")
+        elif current_price < vwap * 0.998:  # >0.2% below VWAP
+            bearish_signals += 1
+            reasons.append("Below VWAP")
+    
+    # 3. Recent price action (close vs open of recent bars)
+    recent_return = features.get('recent_return_5m', 0)
+    if recent_return > 0.3:  # >0.3% up
+        bullish_signals += 1
+        reasons.append("Recent price up")
+    elif recent_return < -0.3:  # >0.3% down
+        bearish_signals += 1
+        reasons.append("Recent price down")
+    
+    # 4. Volume confirmation
+    rel_vol = features.get('rel_volume_1m', 1.0)
+    if rel_vol > 1.5:
+        # High volume confirms the direction
+        if bullish_signals > bearish_signals:
+            bullish_signals += 1
+            reasons.append("Volume confirms up")
+        elif bearish_signals > bullish_signals:
+            bearish_signals += 1
+            reasons.append("Volume confirms down")
+    
+    # Calculate direction and confidence
+    total_signals = bullish_signals + bearish_signals
+    
+    if total_signals == 0:
+        return "NEUTRAL", 0, "No clear signals"
+    
+    if bullish_signals > bearish_signals:
+        confidence = (bullish_signals / (total_signals + 2)) * 100  # +2 to moderate confidence
+        return "LONG", min(95, confidence), " | ".join(reasons)
+    elif bearish_signals > bullish_signals:
+        confidence = (bearish_signals / (total_signals + 2)) * 100
+        return "SHORT", min(95, confidence), " | ".join(reasons)
+    else:
+        return "NEUTRAL", 30, "Mixed signals"
+
+
 def apply_market_state_adjustment(base_score: float, market_state: Literal["GREEN", "YELLOW", "RED"]) -> Tuple[float, str]:
     """
     Apply MarketState adjustment using PENALTIES (not bonuses)
@@ -201,6 +291,10 @@ def calculate_opportunity_score(
     if adjustment_reason:
         why.append(f"MarketState: {adjustment_reason}")
     
+    # Detect direction
+    direction, direction_confidence, direction_reason = detect_direction(features)
+    why.append(f"Direction: {direction} ({direction_confidence:.0f}% - {direction_reason})")
+    
     return {
         "opportunity_score": round(adjusted_score, 2),
         "momentum_score": round(momentum, 2),
@@ -208,5 +302,8 @@ def calculate_opportunity_score(
         "liquidity_score": round(liquidity, 2),
         "stability_score": round(stability, 2),
         "market_state_adjustment": adjustment_reason,
+        "direction": direction,
+        "direction_confidence": round(direction_confidence, 1),
+        "direction_reason": direction_reason,
         "why": why
     }

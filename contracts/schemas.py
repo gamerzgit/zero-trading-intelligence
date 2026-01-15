@@ -100,6 +100,8 @@ class Opportunity(BaseSchema):
     """Level 3: Opportunity (Probabilistic Scoring)"""
     ticker: str = Field(..., description="Stock symbol")
     horizon: Literal["H30", "H2H", "HDAY", "HWEEK"] = Field(..., description="Time horizon")
+    direction: Literal["LONG", "SHORT", "NEUTRAL"] = Field(default="LONG", description="Trade direction: LONG=calls/up, SHORT=puts/down")
+    direction_confidence: float = Field(default=0, ge=0, le=100, description="Confidence in direction (0-100)")
     opportunity_score: float = Field(..., ge=0, le=100, description="0-100 opportunity score")
     probability: float = Field(..., ge=0.0, le=1.0, description="P(MFE >= Target_ATR before MAE >= Stop_ATR within horizon H)")
     target_atr: float = Field(..., description="Target excursion in ATR")

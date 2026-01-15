@@ -72,38 +72,28 @@ class VolatilityProxy:
         # VIX is an INDEX, not a stock - can't fetch directly from Alpaca Stock API
         # Use VIXY ETF which tracks VIX futures (available as a stock)
         # IMPORTANT: VIXY price is NOT VIX level - they are different instruments
+        # NOTE: Must use date range, not limit=1, because limit=1 returns empty during off-hours
         try:
+            end = datetime.now()
+            start = end - timedelta(days=5)  # Look back 5 days to ensure we get data
+            
             request = StockBarsRequest(
                 symbol_or_symbols=['VIXY'],
                 timeframe=TimeFrame.Day,
-                limit=1,
-                feed='iex'
+                start=start,
+                end=end
             )
             
             bars = self.client.get_stock_bars(request)
-            logger.info(f"📊 Alpaca response type: {type(bars)}, content: {bars}")
             
+            # Access VIXY data - Alpaca returns BarSet with dict-like access
             bars_list = None
-            if bars:
-                if isinstance(bars, dict) and "VIXY" in bars:
-                    bars_list = bars["VIXY"]
-                    logger.info("Found VIXY in dict")
-                elif hasattr(bars, "VIXY"):
-                    bars_list = bars.VIXY
-                    logger.info("Found VIXY as attribute")
-                elif hasattr(bars, "data") and isinstance(bars.data, dict) and "VIXY" in bars.data:
-                    bars_list = bars.data["VIXY"]
-                    logger.info("Found VIXY in bars.data dict")
-                elif hasattr(bars, "data") and hasattr(bars.data, "get"):
-                    bars_list = bars.data.get("VIXY")
-                    logger.info(f"Tried bars.data.get('VIXY'): {bars_list}")
-                elif isinstance(bars, list):
-                    bars_list = bars
-                    logger.info("bars is a list")
-                else:
-                    logger.warning(f"⚠️  Unknown bars format. Dir: {dir(bars)}")
-            else:
-                logger.warning("⚠️  Alpaca returned empty/None bars")
+            try:
+                bars_list = bars['VIXY']
+            except (KeyError, TypeError):
+                # Fallback methods
+                if hasattr(bars, 'data') and 'VIXY' in bars.data:
+                    bars_list = bars.data['VIXY']
             
             if bars_list and len(bars_list) >= 1:
                 vixy_price = float(bars_list[-1].close)

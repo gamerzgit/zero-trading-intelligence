@@ -160,6 +160,9 @@ services:
       # Redis
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
+      # Alpaca (for universe fetching)
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
       # Scanner config
       SCAN_INTERVAL_SECONDS: ${SCAN_INTERVAL_SECONDS:-60}
       # API

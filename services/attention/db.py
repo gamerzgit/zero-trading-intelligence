@@ -26,8 +26,14 @@ class AttentionDB:
         """
         Get recent candles for multiple symbols.
         Returns dict: {symbol: [candles]}
+        
+        During off-hours, extends lookback to find most recent available data.
         """
         cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        
+        # First try with requested window
+        # If no data found, extend to 24 hours (for off-hours)
+        extended_cutoff = datetime.utcnow() - timedelta(hours=24)
         
         query = f"""
             SELECT ticker, time, open, high, low, close, volume
@@ -42,6 +48,11 @@ class AttentionDB:
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, symbols, cutoff)
+                
+                # If no data found, try extended lookback (off-hours fallback)
+                if not rows:
+                    logger.info(f"No candles in {minutes}m window, trying 24h lookback")
+                    rows = await conn.fetch(query, symbols, extended_cutoff)
                 
                 for row in rows:
                     ticker = row['ticker']

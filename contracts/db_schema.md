@@ -278,13 +278,21 @@
 | `regime_state` | VARCHAR(10) | NOT NULL | Market state at issue time |
 | `attention_stability_score` | NUMERIC(5,2) | NOT NULL | Attention stability score (0-100) at issue time |
 | `attention_bucket` | VARCHAR(10) | NULL | Derived bucket: STABLE/UNSTABLE/CHAOTIC (for convenience only) |
-| `mfe_atr` | NUMERIC(8,4) | NULL | Realized Max Favorable Excursion (ATR) |
-| `mae_atr` | NUMERIC(8,4) | NULL | Realized Max Adverse Excursion (ATR) |
-| `outcome` | VARCHAR(10) | NOT NULL | PASS, FAIL, or NEUTRAL |
+| `probability_issued` | NUMERIC(5,4) | NULL | Probability at time of opportunity issuance |
+| `target_atr` | NUMERIC(8,4) | NULL | Target excursion in ATR units |
+| `stop_atr` | NUMERIC(8,4) | NULL | Stop excursion in ATR units |
+| `atr_value` | NUMERIC(8,4) | NULL | ATR value at issue time |
+| `entry_price` | NUMERIC(12,4) | NULL | Entry reference price (1m candle close at issue time) |
+| `realized_mfe` | NUMERIC(12,4) | NULL | Realized Max Favorable Excursion (absolute price) |
+| `realized_mae` | NUMERIC(12,4) | NULL | Realized Max Adverse Excursion (absolute price) |
+| `mfe_atr` | NUMERIC(8,4) | NULL | Realized Max Favorable Excursion (ATR units) |
+| `mae_atr` | NUMERIC(8,4) | NULL | Realized Max Adverse Excursion (ATR units) |
+| `outcome` | VARCHAR(10) | NOT NULL | PASS, FAIL, EXPIRED, or NO_DATA |
 | `target_hit_first` | BOOLEAN | NULL | True if MFE >= target before MAE >= stop |
 | `stop_hit_first` | BOOLEAN | NULL | True if MAE >= stop before MFE >= target |
 | `neither_hit` | BOOLEAN | NULL | True if neither target nor stop hit |
 | `evaluation_time` | TIMESTAMPTZ | NOT NULL | When truth test was run |
+| `debug_json` | JSONB | NULL | Debug information (candle counts, timestamps, etc.) |
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Record creation timestamp |
 
 **Indexes:**
@@ -294,6 +302,12 @@
 - Index on `horizon` for horizon-based queries
 - Index on `outcome` for outcome analysis
 - Index on `(regime_state, attention_stability_score, horizon)` for calibration queries
+
+**Outcome Values:**
+- `PASS`: Target price hit before stop price (LONG-only assumption)
+- `FAIL`: Stop price hit before target price
+- `EXPIRED`: Neither target nor stop hit within horizon window
+- `NO_DATA`: Missing candles or ATR data for evaluation
 
 ---
 

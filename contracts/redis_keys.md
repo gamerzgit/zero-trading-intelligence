@@ -121,6 +121,32 @@ These channels publish complete data payloads for real-time market data ingestio
 |----------|------|--------|---------|-----|-------------------|
 | `key:scan_universe` | String (JSON) | Config | zero-scanner | None | List of tickers |
 | `key:system_config` | String (JSON) | Config | All services | None | System configuration |
+| `key:calibration_state` | String (JSON) | zero-truth-test | zero-core-logic | None | Calibration factors (see below) |
+
+**Calibration State Payload (key:calibration_state):**
+```json
+{
+  "timestamp": "2026-01-15T21:05:00Z",
+  "version": "1.0",
+  "buckets": {
+    "H30_GREEN_STABLE": {
+      "horizon": "H30",
+      "regime_state": "GREEN",
+      "attention_bucket": "STABLE",
+      "total_signals": 150,
+      "pass_count": 85,
+      "fail_count": 65,
+      "pass_rate": 0.5667,
+      "shrink_factor": 1.00
+    }
+  },
+  "global_stats": {
+    "total_signals": 500,
+    "global_pass_rate": 0.52,
+    "global_shrink": 0.95
+  }
+}
+```
 
 ### Cache Keys
 

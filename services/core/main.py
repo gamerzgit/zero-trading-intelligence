@@ -70,6 +70,7 @@ class ZeroCoreLogicService:
         self.market_state: Optional[MarketState] = None
         self.last_ranking_time: Optional[datetime] = None
         self.current_rankings: Dict[str, OpportunityRank] = {}  # horizon -> OpportunityRank
+        self.calibration_state: Optional[Dict[str, Any]] = None  # From key:calibration_state
         
     async def connect_db(self):
         """Connect to TimescaleDB"""
@@ -129,6 +130,56 @@ class ZeroCoreLogicService:
             logger.warning(f"⚠️  Failed to load market state: {e}")
         
         return None
+    
+    async def load_calibration_state(self) -> Optional[Dict[str, Any]]:
+        """
+        Load calibration state from Redis (Milestone 7).
+        Used to apply shrink factors to probabilities.
+        """
+        if not self.redis_client:
+            return None
+        
+        try:
+            cal_json = await self.redis_client.get('key:calibration_state')
+            if cal_json:
+                if isinstance(cal_json, bytes):
+                    cal_json = cal_json.decode('utf-8')
+                self.calibration_state = json.loads(cal_json)
+                logger.debug(f"📊 Loaded calibration state: {len(self.calibration_state.get('buckets', {}))} buckets")
+                return self.calibration_state
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to load calibration state: {e}")
+        
+        return None
+    
+    def get_shrink_factor(self, horizon: str, market_state: str, attention_bucket: str) -> float:
+        """
+        Get shrink factor for a specific bucket from calibration state.
+        Per SPEC_LOCK §6.2: Only shrink, never boost above 1.0.
+        """
+        if not self.calibration_state:
+            return 1.0  # No calibration data - no shrink
+        
+        bucket_key = f"{horizon}_{market_state}_{attention_bucket}"
+        buckets = self.calibration_state.get("buckets", {})
+        
+        if bucket_key in buckets:
+            shrink = buckets[bucket_key].get("shrink_factor", 1.0)
+            # Never boost above 1.0
+            return min(shrink, 1.0)
+        
+        # Fall back to global shrink
+        global_stats = self.calibration_state.get("global_stats", {})
+        global_shrink = global_stats.get("global_shrink", 1.0)
+        return min(global_shrink, 1.0)
+    
+    def apply_calibration(self, probability_raw: float, shrink_factor: float) -> float:
+        """
+        Apply calibration shrink to probability.
+        Per SPEC_LOCK §6.2: Never increase above raw, only shrink.
+        """
+        adjusted = probability_raw * shrink_factor
+        return max(0.0, min(1.0, adjusted))
     
     async def fetch_candles(self, ticker: str, table: str, lookback_periods: int) -> Optional[pd.DataFrame]:
         """Fetch recent candles from database"""
@@ -227,8 +278,19 @@ class ZeroCoreLogicService:
                 )
                 
                 # Map confidence_pct to probability field (schema requirement)
-                # NOTE: This is HEURISTIC until Milestone 6 (Truth Test calibration)
-                confidence_pct = enriched["confidence_pct"]
+                # NOTE: This is HEURISTIC until calibrated by Truth Test (Milestone 7)
+                confidence_pct_raw = enriched["confidence_pct"]
+                
+                # Apply calibration shrink factor (Milestone 7)
+                # Per SPEC_LOCK §6.2: Only shrink, never boost above raw
+                attention_bucket = enriched.get("attention_bucket", "UNSTABLE")
+                shrink_factor = self.get_shrink_factor(horizon, market_state.state, attention_bucket)
+                confidence_pct = self.apply_calibration(confidence_pct_raw, shrink_factor)
+                
+                # Build why list with calibration info
+                why_list = enriched["why"] + [f"Confidence: {enriched['confidence_band']} (HEURISTIC)"]
+                if shrink_factor < 1.0:
+                    why_list.append(f"Calibration shrink: {shrink_factor:.2f}")
                 
                 # Create Opportunity object
                 # Schema requires "probability" field, but we document it's heuristic
@@ -236,14 +298,14 @@ class ZeroCoreLogicService:
                     ticker=enriched["ticker"],
                     horizon=enriched["horizon"],
                     opportunity_score=enriched["opportunity_score"],
-                    probability=confidence_pct,  # HEURISTIC - mapped from confidence_pct
+                    probability=confidence_pct,  # HEURISTIC - calibrated by shrink factor
                     target_atr=enriched["target_atr"],
                     stop_atr=enriched["stop_atr"],
                     market_state=enriched["market_state"],
                     attention_stability_score=enriched["attention_stability_score"],
                     attention_bucket=enriched["attention_bucket"],
                     attention_alignment=enriched["attention_alignment"],
-                    why=enriched["why"] + [f"Confidence: {enriched['confidence_band']} (HEURISTIC)"],
+                    why=why_list,
                     regime_dependency=None,  # TODO: Add regime dependency logic
                     key_levels=None,  # TODO: Add VWAP/support/resistance levels
                     invalidation_rule=None,  # TODO: Add invalidation rules
@@ -273,6 +335,9 @@ class ZeroCoreLogicService:
         if market_state.state == "RED":
             logger.info(f"🚫 MarketState is RED ({market_state.reason}) - vetoing ranking")
             return
+        
+        # Load calibration state (Milestone 7)
+        await self.load_calibration_state()
         
         logger.info(f"📊 Ranking {len(candidate_list.candidates)} candidates for {candidate_list.horizon}")
         

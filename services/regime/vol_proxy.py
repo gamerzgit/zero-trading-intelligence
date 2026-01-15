@@ -39,29 +39,30 @@ class VolatilityProxy:
             except Exception as e:
                 logger.warning(f"Failed to initialize Alpaca client: {e}")
     
-    async def fetch_volatility(self) -> Tuple[Optional[float], str]:
+    async def fetch_volatility(self) -> Tuple[Optional[float], Optional[float], str]:
         """
-        Fetch volatility level from Alpaca API
+        Fetch volatility data from Alpaca API
         
         NOTE: VIX is an INDEX (CBOE Volatility Index), NOT a stock.
         Alpaca StockHistoricalDataClient only provides STOCKS, not indices.
         
         Strategy:
-        1. Use VIXY ETF (tracks VIX futures) from Alpaca
-        2. Convert VIXY price to approximate VIX level using proper relationship
-        3. VIXY is typically priced around $10-20 when VIX is 15-25
-        4. Relationship: VIXY ≈ VIX / 10 (roughly, but varies with contango)
+        1. Use VIXY ETF (tracks VIX futures) from Alpaca as volatility proxy
+        2. Return VIXY price directly (do NOT convert to VIX - they are different)
+        3. Thresholds are based on VIXY price levels, not VIX levels
         
         Returns:
-            Tuple[Optional[float], str]: (vix_level, source_label)
-            - vix_level: Approximate VIX level derived from VIXY
+            Tuple[Optional[float], Optional[float], str]: (vix_level, vixy_price, source_label)
+            - vix_level: Real VIX level (None - not available from Alpaca Stock API)
+            - vixy_price: VIXY ETF price (used for volatility thresholds)
             - source_label: "VIXY_ALPACA" or "UNAVAILABLE"
         """
         if not self.client:
-            return None, "UNAVAILABLE"
+            return None, None, "UNAVAILABLE"
         
         # VIX is an INDEX, not a stock - can't fetch directly from Alpaca Stock API
         # Use VIXY ETF which tracks VIX futures (available as a stock)
+        # IMPORTANT: VIXY price is NOT VIX level - they are different instruments
         try:
             request = StockBarsRequest(
                 symbol_or_symbols=['VIXY'],
@@ -86,35 +87,25 @@ class VolatilityProxy:
             if bars_list and len(bars_list) >= 1:
                 vixy_price = float(bars_list[-1].close)
                 
-                # VIXY is a 1.5x leveraged ETF on VIX futures
-                # Real relationship: VIXY typically trades roughly 1:1 with VIX in normal conditions
-                # Examples:
-                #   VIX = 15 → VIXY ≈ $10-15
-                #   VIX = 20 → VIXY ≈ $15-20
-                #   VIX = 25 → VIXY ≈ $20-25
-                # 
-                # The relationship is NOT linear and varies with contango/backwardation,
-                # but for regime detection purposes, we can use: VIX ≈ VIXY (1:1)
-                # 
                 # Sanity check: VIXY should be $5-30 range typically
                 if vixy_price < 1.0 or vixy_price > 50.0:
                     logger.warning(f"⚠️  VIXY price ${vixy_price:.2f} seems unusual - may be data error")
                 
-                # Return VIXY price directly (not converted to VIX)
-                # Thresholds in logic.py are adjusted for VIXY price levels:
+                # Return VIXY price as vixy_price (NOT as vix_level)
+                # Real VIX is not available from Alpaca Stock API (it's an index, not a stock)
+                # Thresholds in logic.py use VIXY price levels directly:
                 #   GREEN: VIXY < $20
                 #   YELLOW: VIXY $20-25
                 #   RED: VIXY >= $25
-                # This avoids conversion errors and makes the system more transparent
                 
-                logger.info(f"✅ Using VIXY from Alpaca: ${vixy_price:.2f} (using VIXY-based thresholds)")
-                return vixy_price, "VIXY_ALPACA"
+                logger.info(f"✅ Fetched VIXY from Alpaca: ${vixy_price:.2f} (using VIXY-based thresholds, NOT VIX)")
+                return None, vixy_price, "VIXY_ALPACA"  # vix_level=None, vixy_price=value
             
-            return None, "UNAVAILABLE"
+            return None, None, "UNAVAILABLE"
             
         except Exception as e:
             logger.warning(f"Failed to fetch VIXY from Alpaca: {e}")
-            return None, "UNAVAILABLE"
+            return None, None, "UNAVAILABLE"
     
     def get_volatility_zone(self, vix_level: Optional[float]) -> Tuple[str, str]:
         """

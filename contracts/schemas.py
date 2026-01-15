@@ -38,7 +38,8 @@ class BaseSchema(BaseModel):
 class MarketState(BaseSchema):
     """Level 0: Market Permission State (Veto Only)"""
     state: Literal["GREEN", "YELLOW", "RED"] = Field(..., description="Market permission state")
-    vix_level: Optional[float] = Field(None, description="VIX level")
+    vix_level: Optional[float] = Field(None, description="Real VIX level (from CBOE/Yahoo/etc. - not VIXY)")
+    vixy_price: Optional[float] = Field(None, description="VIXY ETF price (used as volatility proxy when VIX unavailable)")
     vix_roc: Optional[float] = Field(None, description="VIX rate of change")
     adv_decl: Optional[float] = Field(None, description="Advance/Decline ratio")
     trin: Optional[float] = Field(None, description="TRIN (Trading Index)")

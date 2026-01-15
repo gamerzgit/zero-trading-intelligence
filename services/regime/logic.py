@@ -141,43 +141,43 @@ class RegimeCalculator:
         # Default (shouldn't happen if market is open)
         return "OFF_HOURS", "Off Hours Halt"
     
-    def get_volatility_zone(self, vix_level: Optional[float], source_label: str) -> Tuple[str, str]:
+    def get_volatility_zone(self, vixy_price: Optional[float], source_label: str) -> Tuple[str, str]:
         """
-        Classify volatility zone based on VIX level from Alpaca API
+        Classify volatility zone based on VIXY price (NOT VIX level)
+        
+        IMPORTANT: This uses VIXY ETF price, NOT VIX index level.
+        VIXY is a different instrument and thresholds are calibrated for VIXY price levels.
         
         Args:
-            vix_level: VIX level (from Alpaca API - VIX_ALPACA or VIXY_ALPACA)
-            source_label: "VIX_ALPACA", "VIXY_ALPACA", or "UNAVAILABLE"
+            vixy_price: VIXY ETF price (from Alpaca API)
+            source_label: "VIXY_ALPACA" or "UNAVAILABLE"
             
         Returns:
             Tuple[str, str]: (zone, reason_suffix)
             - zone: "GREEN", "YELLOW", or "RED"
             - reason_suffix: Text to append to reason
         """
-        if vix_level is None:
+        if vixy_price is None:
             return "GREEN", ""  # Default to GREEN if unavailable
         
-        # Build reason suffix with source label (from Alpaca)
-        # NOTE: VIX is an index, not a stock - we use VIXY ETF as proxy
-        # IMPORTANT: vix_level here is actually VIXY price (1:1 approximation)
-        # Use VIXY-based thresholds directly (don't convert to VIX)
+        # Build reason suffix - explicitly state this is VIXY, not VIX
         if source_label == "VIXY_ALPACA":
-            source_text = f"VIXY=${vix_level:.2f} (VIX proxy from Alpaca)"
+            source_text = f"VIXY=${vixy_price:.2f} (volatility proxy, NOT VIX)"
         else:
-            source_text = f"Volatility={vix_level:.2f}"
+            source_text = f"Volatility={vixy_price:.2f}"
         
-        # VIXY-based thresholds (VIXY price directly, not converted VIX)
+        # VIXY-based thresholds (calibrated for VIXY ETF price, NOT VIX index)
         # VIXY typically trades $10-20 in normal conditions, $20-30 in elevated vol, $30+ in panic
-        # Adjusted thresholds for VIXY price:
+        # Thresholds:
         #   GREEN: VIXY < $20 (normal/low vol)
         #   YELLOW: VIXY $20-25 (elevated vol)
         #   RED: VIXY >= $25 (high vol/panic)
-        if vix_level >= 25.0:
+        if vixy_price >= 25.0:
             reason = f"Volatility Halt (VIXY >= $25)"
             if source_text:
                 reason += f" [{source_text}]"
             return "RED", reason
-        elif vix_level >= 20.0:
+        elif vixy_price >= 20.0:
             reason = f"Elevated Volatility (VIXY $20-25)"
             if source_text:
                 reason += f" [{source_text}]"
@@ -189,6 +189,7 @@ class RegimeCalculator:
         self,
         now_et: datetime,
         vix_level: Optional[float],
+        vixy_price: Optional[float],
         vix_source: str,
         event_risk: bool = False
     ) -> Tuple[str, str]:
@@ -197,8 +198,9 @@ class RegimeCalculator:
         
         Args:
             now_et: Current datetime in ET timezone
-            vix_level: VIX level (or proxy)
-            vix_source: "VIX" or "VIXY_PROXY" or "UNAVAILABLE"
+            vix_level: Real VIX level (None if unavailable)
+            vixy_price: VIXY ETF price (used for volatility thresholds)
+            vix_source: "VIXY_ALPACA" or "UNAVAILABLE"
             event_risk: Whether major event risk exists
             
         Returns:
@@ -223,8 +225,8 @@ class RegimeCalculator:
         # Get time regime
         time_regime, time_reason = self.get_time_regime(now_et)
         
-        # Get volatility zone
-        vol_zone, vol_reason = self.get_volatility_zone(vix_level, vix_source)
+        # Get volatility zone (using VIXY price, NOT VIX level)
+        vol_zone, vol_reason = self.get_volatility_zone(vixy_price, vix_source)
         
         # Combine event risk
         if event_risk:
@@ -235,19 +237,19 @@ class RegimeCalculator:
         # ============================================================
         
         # 1) RED conditions (Halt)
-        if vol_zone == "RED" or vix_level is not None and vix_level >= 25:
-            return "RED", vol_reason if vol_reason else "Volatility Halt (>=25)"
+        if vol_zone == "RED" or (vixy_price is not None and vixy_price >= 25.0):
+            return "RED", vol_reason if vol_reason else "Volatility Halt (VIXY >= $25)"
         
         # 2) YELLOW conditions (Caution)
         if time_regime in ["OPENING", "LUNCH"]:
             return "YELLOW", time_reason
-        if vol_zone == "YELLOW" or (vix_level is not None and vix_level >= 20):
-            return "YELLOW", vol_reason if vol_reason else "Elevated Volatility (20-25)"
+        if vol_zone == "YELLOW" or (vixy_price is not None and vixy_price >= 20.0):
+            return "YELLOW", vol_reason if vol_reason else "Elevated Volatility (VIXY $20-25)"
         
         # 3) GREEN conditions (Full Permission)
         # Prime Window or Closing Window + Low Volatility
         if time_regime in ["PRIME_WINDOW", "CLOSING"]:
-            if vix_level is None or vix_level < 20:
+            if vixy_price is None or vixy_price < 20.0:
                 return "GREEN", time_reason
             else:
                 # Even in Prime Window, high vol = YELLOW

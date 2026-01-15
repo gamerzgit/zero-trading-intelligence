@@ -147,28 +147,31 @@ class RegimeService:
             # Get current time in ET
             now_et = datetime.now(ET)
             
-            # Fetch volatility
-            vix_level, vix_source = await self.vol_proxy.fetch_volatility()
+            # Fetch volatility (returns vix_level, vixy_price, source_label)
+            vix_level, vixy_price, vix_source = await self.vol_proxy.fetch_volatility()
             
-            # Calculate market state
+            # Calculate market state (using VIXY price for thresholds)
             state, reason = self.calculator.calculate_market_state(
                 now_et=now_et,
-                vix_level=vix_level,
+                vix_level=vix_level,  # Real VIX (None if unavailable)
+                vixy_price=vixy_price,  # VIXY ETF price (used for thresholds)
                 vix_source=vix_source,
                 event_risk=False  # TODO: Add event calendar in future milestone
             )
             
-            # Create MarketState object
+            # Create MarketState object (timestamp must be UTC per schema)
+            from datetime import timezone as tz
             market_state = MarketState(
                 state=state,
-                vix_level=vix_level,
+                vix_level=vix_level,  # Real VIX (None if unavailable)
+                vixy_price=vixy_price,  # VIXY ETF price (explicit, not confused with VIX)
                 vix_roc=None,  # TODO: Calculate in future
                 adv_decl=None,  # TODO: Calculate in future
                 trin=None,  # TODO: Calculate in future
                 breadth_score=None,  # TODO: Calculate in future
                 event_risk=False,
                 reason=reason,
-                timestamp=now_et
+                timestamp=now_et.astimezone(tz.utc)  # Convert ET to UTC per schema requirement
             )
             
             # Check if state changed

@@ -81,7 +81,8 @@ class VolatilityProxy:
                 symbol_or_symbols=['VIXY'],
                 timeframe=TimeFrame.Day,
                 start=start,
-                end=end
+                end=end,
+                feed='iex'  # Use IEX feed (free tier), not SIP
             )
             
             bars = self.client.get_stock_bars(request)

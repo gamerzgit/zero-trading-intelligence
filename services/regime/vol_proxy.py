@@ -36,8 +36,14 @@ class VolatilityProxy:
                     secret_key=alpaca_secret_key,
                     raw_data=False
                 )
+                logger.info("✅ Alpaca client initialized for VIXY fetching")
             except Exception as e:
                 logger.warning(f"Failed to initialize Alpaca client: {e}")
+        else:
+            if not ALPACA_AVAILABLE:
+                logger.warning("⚠️  alpaca-py not installed - VIXY fetching disabled")
+            elif not alpaca_api_key or not alpaca_secret_key:
+                logger.warning("⚠️  ALPACA_API_KEY or ALPACA_SECRET_KEY not set - VIXY fetching disabled")
     
     async def fetch_volatility(self) -> Tuple[Optional[float], Optional[float], str]:
         """
@@ -58,7 +64,10 @@ class VolatilityProxy:
             - source_label: "VIXY_ALPACA" or "UNAVAILABLE"
         """
         if not self.client:
+            logger.debug("Alpaca client not available - skipping VIXY fetch")
             return None, None, "UNAVAILABLE"
+        
+        logger.debug("Fetching VIXY from Alpaca...")
         
         # VIX is an INDEX, not a stock - can't fetch directly from Alpaca Stock API
         # Use VIXY ETF which tracks VIX futures (available as a stock)

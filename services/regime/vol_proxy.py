@@ -64,10 +64,10 @@ class VolatilityProxy:
             - source_label: "VIXY_ALPACA" or "UNAVAILABLE"
         """
         if not self.client:
-            logger.debug("Alpaca client not available - skipping VIXY fetch")
+            logger.info("⚠️  Alpaca client not available - skipping VIXY fetch")
             return None, None, "UNAVAILABLE"
         
-        logger.debug("Fetching VIXY from Alpaca...")
+        logger.info("📡 Fetching VIXY from Alpaca...")
         
         # VIX is an INDEX, not a stock - can't fetch directly from Alpaca Stock API
         # Use VIXY ETF which tracks VIX futures (available as a stock)

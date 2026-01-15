@@ -513,6 +513,60 @@ class Certifier:
     # =========================================================================
     # SUMMARY
     # =========================================================================
+    # =========================================================================
+    # I) QUERY MODE + MORNING BRIEF + URGENCY
+    # =========================================================================
+    def certify_additional_features(self):
+        print("\n" + "="*70)
+        print("I) QUERY MODE + MORNING BRIEF + URGENCY")
+        print("="*70)
+        
+        # Test Query Mode
+        try:
+            resp = requests.get("http://localhost:8002/query?ticker=SPY", timeout=10)
+            if resp.ok:
+                data = resp.json()
+                if "eligible" in data and "reason_codes" in data:
+                    self.record("I", f"Query Mode works (SPY eligible={data.get('eligible')})", True)
+                else:
+                    self.record("I", "Query Mode response format", False, "Missing required fields")
+            else:
+                self.record("I", "Query Mode endpoint", False, f"HTTP {resp.status_code}")
+        except Exception as e:
+            self.record("I", "Query Mode endpoint", False, str(e))
+        
+        # Test Morning Brief
+        try:
+            resp = requests.get("http://localhost:8002/brief", timeout=10)
+            if resp.ok:
+                data = resp.json()
+                required = ["day_type", "market_summary", "attention_summary", "action_guidance", "narrative"]
+                missing = [f for f in required if f not in data]
+                if not missing:
+                    print(f"    Day Type: {data.get('day_type')}")
+                    print(f"    Action: {data.get('action_guidance', {}).get('primary_action')}")
+                    self.record("I", "Morning Brief works", True)
+                else:
+                    self.record("I", "Morning Brief format", False, f"Missing: {missing}")
+            else:
+                self.record("I", "Morning Brief endpoint", False, f"HTTP {resp.status_code}")
+        except Exception as e:
+            self.record("I", "Morning Brief endpoint", False, str(e))
+        
+        # Test Status endpoint
+        try:
+            resp = requests.get("http://localhost:8002/status", timeout=10)
+            if resp.ok:
+                data = resp.json()
+                if "market_state" in data and "attention_state" in data:
+                    self.record("I", "Status endpoint works", True)
+                else:
+                    self.record("I", "Status endpoint format", False, "Missing state fields")
+            else:
+                self.record("I", "Status endpoint", False, f"HTTP {resp.status_code}")
+        except Exception as e:
+            self.record("I", "Status endpoint", False, str(e))
+
     def print_summary(self):
         print("\n" + "="*70)
         print("CERTIFICATION SUMMARY")
@@ -550,6 +604,7 @@ class Certifier:
         self.certify_safety()
         self.certify_timezone()
         self.certify_performance()
+        self.certify_additional_features()
         
         self.print_summary()
         

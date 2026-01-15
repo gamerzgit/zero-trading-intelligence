@@ -31,12 +31,16 @@ try:
     from scoring import calculate_opportunity_score
     from confidence import enrich_opportunity
     from query import QueryEngine
+    from morning_brief import MorningBriefGenerator
+    from urgency import UrgencyEngine
 except ImportError:
     # Handle relative imports for Docker
     from .features import extract_features
     from .scoring import calculate_opportunity_score
     from .confidence import enrich_opportunity
     from .query import QueryEngine
+    from .morning_brief import MorningBriefGenerator
+    from .urgency import UrgencyEngine
 
 # Configure logging
 logging.basicConfig(
@@ -77,6 +81,10 @@ class ZeroCoreLogicService:
         
         # Query Engine (SPEC_LOCK §5.2)
         self.query_engine: Optional[QueryEngine] = None
+        # Morning Brief Generator (SPEC_LOCK §4.1)
+        self.morning_brief: Optional[MorningBriefGenerator] = None
+        # Urgency Engine (SPEC_LOCK Level 4)
+        self.urgency_engine: Optional[UrgencyEngine] = None
         
     async def connect_db(self):
         """Connect to TimescaleDB"""
@@ -592,6 +600,14 @@ class ZeroCoreLogicService:
         self.query_engine = QueryEngine(self)
         logger.info("✅ Query Engine initialized")
         
+        # Initialize Morning Brief Generator
+        self.morning_brief = MorningBriefGenerator(self)
+        logger.info("✅ Morning Brief Generator initialized")
+        
+        # Initialize Urgency Engine
+        self.urgency_engine = UrgencyEngine(self)
+        logger.info("✅ Urgency Engine initialized")
+        
         self.is_running = True
         
         # Start listening for updates
@@ -678,6 +694,77 @@ async def query_handler(request):
         )
 
 
+async def morning_brief_handler(request):
+    """
+    Morning Brief endpoint - SPEC_LOCK §4.1
+    
+    GET /brief
+    
+    Returns daily morning brief.
+    """
+    service = request.app['service']
+    
+    if not service.morning_brief:
+        return web.json_response(
+            {"error": "Morning brief generator not initialized"},
+            status=503
+        )
+    
+    try:
+        brief = await service.morning_brief.generate()
+        return web.json_response(brief)
+    except Exception as e:
+        logger.error(f"Morning brief error: {e}", exc_info=True)
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def status_handler(request):
+    """
+    System Status endpoint
+    
+    GET /status
+    
+    Returns combined system state.
+    """
+    service = request.app['service']
+    
+    try:
+        import json
+        
+        # Get all states
+        market_state = None
+        attention_state = None
+        calibration_state = None
+        
+        if service.redis_client:
+            ms = await service.redis_client.get("key:market_state")
+            if ms:
+                market_state = json.loads(ms)
+            
+            att = await service.redis_client.get("key:attention_state")
+            if att:
+                attention_state = json.loads(att)
+            
+            cal = await service.redis_client.get("key:calibration_state")
+            if cal:
+                calibration_state = json.loads(cal)
+        
+        return web.json_response({
+            "schema_version": "1.0",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "market_state": market_state,
+            "attention_state": attention_state,
+            "calibration_state": calibration_state,
+            "service_status": {
+                "is_running": service.is_running,
+                "last_ranking": service.last_ranking_time.isoformat() if service.last_ranking_time else None
+            }
+        })
+    except Exception as e:
+        logger.error(f"Status error: {e}", exc_info=True)
+        return web.json_response({"error": str(e)}, status=500)
+
+
 async def init_app():
     """Initialize aiohttp app"""
     app = web.Application()
@@ -685,6 +772,8 @@ async def init_app():
     app['service'] = service
     app.router.add_get('/health', health_handler)
     app.router.add_get('/query', query_handler)  # SPEC_LOCK §5.2
+    app.router.add_get('/brief', morning_brief_handler)  # SPEC_LOCK §4.1
+    app.router.add_get('/status', status_handler)
     return app, service
 
 

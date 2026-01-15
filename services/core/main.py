@@ -71,6 +71,7 @@ class ZeroCoreLogicService:
         self.last_ranking_time: Optional[datetime] = None
         self.current_rankings: Dict[str, OpportunityRank] = {}  # horizon -> OpportunityRank
         self.calibration_state: Optional[Dict[str, Any]] = None  # From key:calibration_state
+        self.attention_state: Optional[Dict[str, Any]] = None  # From key:attention_state
         
     async def connect_db(self):
         """Connect to TimescaleDB"""
@@ -181,6 +182,52 @@ class ZeroCoreLogicService:
         adjusted = probability_raw * shrink_factor
         return max(0.0, min(1.0, adjusted))
     
+    async def load_attention_state(self) -> Dict[str, Any]:
+        """
+        Load attention state from Redis (Milestone 8).
+        Returns default if not available.
+        """
+        default_state = {
+            "attention_stability_score": 50.0,
+            "attention_bucket": "UNSTABLE",
+            "risk_on_off_state": "NEUTRAL",
+            "correlation_regime": "Unknown"
+        }
+        
+        if not self.redis_client:
+            return default_state
+        
+        try:
+            att_json = await self.redis_client.get('key:attention_state')
+            if att_json:
+                if isinstance(att_json, bytes):
+                    att_json = att_json.decode('utf-8')
+                self.attention_state = json.loads(att_json)
+                logger.info(
+                    f"📊 Loaded attention state: score={self.attention_state.get('attention_stability_score')}, "
+                    f"bucket={self.attention_state.get('attention_bucket')}"
+                )
+                return self.attention_state
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to load attention state: {e}")
+        
+        return default_state
+    
+    def should_gate_horizon(self, horizon: str, attention_score: float) -> bool:
+        """
+        Check if horizon should be gated based on attention score.
+        Per SPEC_LOCK:
+        - CHAOTIC (<40): only allow H30
+        - UNSTABLE (40-69): gate HWEEK
+        """
+        if attention_score < 40:  # CHAOTIC
+            # Only allow H30
+            return horizon in ["H2H", "HDAY", "HWEEK"]
+        elif attention_score < 70:  # UNSTABLE
+            # Gate HWEEK
+            return horizon == "HWEEK"
+        return False  # STABLE - allow all
+    
     async def fetch_candles(self, ticker: str, table: str, lookback_periods: int) -> Optional[pd.DataFrame]:
         """Fetch recent candles from database"""
         if not self.db_pool:
@@ -265,8 +312,9 @@ class ZeroCoreLogicService:
                     continue
                 
                 # Enrich with confidence and ATR levels
-                # Use default attention stability score (50) if not available
-                # TODO: Load from key:attention_state when available
+                # Load attention state from Redis (Milestone 8)
+                attention_score = self.attention_state.get("attention_stability_score", 50.0) if self.attention_state else 50.0
+                
                 enriched = enrich_opportunity(
                     score_data=score_data,
                     ticker=ticker,
@@ -274,7 +322,7 @@ class ZeroCoreLogicService:
                     market_state=market_state.state,
                     current_price=current_price,
                     atr=atr,
-                    attention_stability_score=50.0  # Default until attention engine is available
+                    attention_stability_score=attention_score
                 )
                 
                 # Map confidence_pct to probability field (schema requirement)
@@ -338,6 +386,18 @@ class ZeroCoreLogicService:
         
         # Load calibration state (Milestone 7)
         await self.load_calibration_state()
+        
+        # Load attention state (Milestone 8)
+        attention_state = await self.load_attention_state()
+        attention_score = attention_state.get("attention_stability_score", 50.0)
+        attention_bucket = attention_state.get("attention_bucket", "UNSTABLE")
+        
+        # Gate horizons based on attention (SPEC_LOCK requirement)
+        if self.should_gate_horizon(candidate_list.horizon, attention_score):
+            logger.info(
+                f"🚫 Horizon {candidate_list.horizon} gated due to attention={attention_score} ({attention_bucket})"
+            )
+            return
         
         logger.info(f"📊 Ranking {len(candidate_list.candidates)} candidates for {candidate_list.horizon}")
         

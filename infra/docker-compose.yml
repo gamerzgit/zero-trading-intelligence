@@ -326,6 +326,42 @@ services:
     networks:
       - zero-network
 
+  # Attention Engine (Milestone 8)
+  zero-attention:
+    build:
+      context: ..
+      dockerfile: services/attention/Dockerfile
+    container_name: zero-attention
+    environment:
+      # Database
+      DB_HOST: ${DB_HOST:-timescaledb}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-zero_trading}
+      DB_USER: ${DB_USER:-zero_user}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # Redis
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      # API
+      ATTENTION_API_PORT: ${ATTENTION_API_PORT:-8005}
+      ATTENTION_INTERVAL: ${ATTENTION_INTERVAL:-60}
+    ports:
+      - "${ATTENTION_API_PORT:-8005}:8005"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - zero-network
+
 networks:
   zero-network:
     driver: bridge

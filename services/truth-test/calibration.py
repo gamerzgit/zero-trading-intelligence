@@ -207,6 +207,33 @@ def aggregate_calibration(
     calibration["degraded_horizons"] = list(degraded_horizons)
     calibration["degraded_states"] = list(degraded_states)
     
+    # Build probability_calibration in spec format:
+    # { "H30": { "GREEN": { "STABLE": { "predicted": 0.70, "realized": 0.58, "confidence_adjustment": -0.12 } } } }
+    probability_calibration = {}
+    for bucket_key, bucket_data in calibration["buckets"].items():
+        horizon = bucket_data["horizon"]
+        regime = bucket_data["regime_state"]
+        attention = bucket_data["attention_bucket"]
+        
+        if horizon not in probability_calibration:
+            probability_calibration[horizon] = {}
+        if regime not in probability_calibration[horizon]:
+            probability_calibration[horizon][regime] = {}
+        
+        predicted = bucket_data.get("avg_probability", 0.5)
+        realized = bucket_data.get("win_rate", 0.0)
+        adjustment = realized - predicted  # Negative if overconfident
+        
+        probability_calibration[horizon][regime][attention] = {
+            "predicted": round(predicted, 4),
+            "realized": round(realized, 4),
+            "confidence_adjustment": round(adjustment, 4),
+            "shrink_factor": bucket_data.get("shrink_factor", 1.0),
+            "sample_size": bucket_data.get("total_signals", 0)
+        }
+    
+    calibration["probability_calibration"] = probability_calibration
+    
     logger.info(
         f"Calibration complete: {len(calibration['buckets'])} buckets, "
         f"{total_signals} total signals, "

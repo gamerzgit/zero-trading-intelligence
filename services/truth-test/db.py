@@ -163,10 +163,11 @@ class TruthTestDB:
                 attention_stability_score, attention_bucket,
                 probability_issued, target_atr, stop_atr, atr_value,
                 entry_price, realized_mfe, realized_mae, mfe_atr, mae_atr,
-                outcome, target_hit_first, stop_hit_first, neither_hit,
+                outcome, realized_outcome, time_to_resolution,
+                target_hit_first, stop_hit_first, neither_hit,
                 evaluation_time, debug_json
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
             )
             RETURNING id
         """
@@ -191,6 +192,8 @@ class TruthTestDB:
                 result.get('mfe_atr'),
                 result.get('mae_atr'),
                 result['outcome'],
+                result.get('realized_outcome'),  # BOOLEAN: True=SUCCESS, False=FAILURE
+                result.get('time_to_resolution'),  # Seconds from issue to resolution
                 result.get('target_hit_first'),
                 result.get('stop_hit_first'),
                 result.get('neither_hit'),
@@ -220,6 +223,8 @@ class TruthTestDB:
                 COUNT(*) FILTER (WHERE outcome = 'EXPIRED') as expired_count,
                 COUNT(*) FILTER (WHERE outcome = 'NO_DATA') as no_data_count,
                 AVG(probability_issued) as avg_probability,
+                AVG(mfe_atr) as avg_mfe,
+                AVG(mae_atr) as avg_mae,
                 AVG(CASE WHEN outcome = 'PASS' THEN 1.0 ELSE 0.0 END) as actual_pass_rate
             FROM performance_log
             WHERE evaluation_time >= $1
@@ -231,3 +236,26 @@ class TruthTestDB:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(query, cutoff)
             return [dict(row) for row in rows]
+    
+    async def insert_calibration_snapshot(self, calibration: Dict[str, Any]) -> int:
+        """
+        Insert calibration snapshot to calibration_log for persistence.
+        """
+        query = """
+            INSERT INTO calibration_log (
+                time, buckets_json, global_stats_json, 
+                degraded_horizons, degraded_states
+            ) VALUES ($1, $2, $3, $4, $5)
+            RETURNING id
+        """
+        
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                query,
+                datetime.utcnow(),
+                json.dumps(calibration.get("buckets", {})),
+                json.dumps(calibration.get("global_stats", {})),
+                calibration.get("degraded_horizons", []),
+                calibration.get("degraded_states", [])
+            )
+            return row['id']

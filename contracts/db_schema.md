@@ -288,6 +288,8 @@
 | `mfe_atr` | NUMERIC(8,4) | NULL | Realized Max Favorable Excursion (ATR units) |
 | `mae_atr` | NUMERIC(8,4) | NULL | Realized Max Adverse Excursion (ATR units) |
 | `outcome` | VARCHAR(10) | NOT NULL | PASS, FAIL, EXPIRED, or NO_DATA |
+| `realized_outcome` | BOOLEAN | NULL | True=SUCCESS (MFE >= target before MAE >= stop), False=FAILURE |
+| `time_to_resolution` | DOUBLE PRECISION | NULL | Seconds from issue_time to resolution |
 | `target_hit_first` | BOOLEAN | NULL | True if MFE >= target before MAE >= stop |
 | `stop_hit_first` | BOOLEAN | NULL | True if MAE >= stop before MFE >= target |
 | `neither_hit` | BOOLEAN | NULL | True if neither target nor stop hit |

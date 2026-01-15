@@ -135,6 +135,24 @@ These channels publish complete data payloads for real-time market data ingestio
 | `key:system_config` | String (JSON) | Config | All services | None | System configuration |
 | `key:calibration_state` | String (JSON) | zero-truth-test | zero-core-logic | None | Full calibration state (see below) |
 | `key:confidence_multipliers` | String (JSON) | zero-truth-test | zero-core-logic | None | Per-bucket shrink factors for quick lookup |
+| `key:probability_calibration` | String (JSON) | zero-truth-test | zero-core-logic | None | Calibration in spec format (see below) |
+
+**Probability Calibration Payload (key:probability_calibration):**
+```json
+{
+  "H30": {
+    "GREEN": {
+      "STABLE": {
+        "predicted": 0.70,
+        "realized": 0.58,
+        "confidence_adjustment": -0.12,
+        "shrink_factor": 0.75,
+        "sample_size": 150
+      }
+    }
+  }
+}
+```
 
 **Calibration State Payload (key:calibration_state):**
 ```json

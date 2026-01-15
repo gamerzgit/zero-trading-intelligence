@@ -251,6 +251,13 @@ class TruthTestService:
                 json.dumps(calibration_state.get("confidence_multipliers", {}))
             )
             
+            # 3. Publish key:probability_calibration in spec format
+            # Format: { "H30": { "GREEN": { "STABLE": { "predicted": 0.70, "realized": 0.58, ... } } } }
+            await self.redis_client.set(
+                "key:probability_calibration",
+                json.dumps(calibration_state.get("probability_calibration", {}))
+            )
+            
             # 3. Publish notification to chan:calibration_update (for dashboard)
             update_notification = {
                 "timestamp": calibration_state["timestamp"],

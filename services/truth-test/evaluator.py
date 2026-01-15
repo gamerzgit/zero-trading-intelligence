@@ -141,39 +141,63 @@ def evaluate_opportunity(
     result["mae_atr"] = mae / atr_value if atr_value > 0 else None
     
     # Determine outcome based on which hit first
+    # Per spec: SUCCESS if MFE >= target_atr BEFORE MAE >= stop_atr
+    resolution_time = None
+    
     if target_hit_time is not None and stop_hit_time is not None:
         # Both hit - which was first?
         if target_hit_time <= stop_hit_time:
             result["outcome"] = "PASS"
+            result["realized_outcome"] = True  # SUCCESS
             result["target_hit_first"] = True
             result["stop_hit_first"] = False
             result["neither_hit"] = False
+            resolution_time = target_hit_time
         else:
             result["outcome"] = "FAIL"
+            result["realized_outcome"] = False  # FAILURE
             result["target_hit_first"] = False
             result["stop_hit_first"] = True
             result["neither_hit"] = False
+            resolution_time = stop_hit_time
     elif target_hit_time is not None:
-        # Only target hit
+        # Only target hit - SUCCESS
         result["outcome"] = "PASS"
+        result["realized_outcome"] = True
         result["target_hit_first"] = True
         result["stop_hit_first"] = False
         result["neither_hit"] = False
+        resolution_time = target_hit_time
     elif stop_hit_time is not None:
-        # Only stop hit
+        # Only stop hit - FAILURE
         result["outcome"] = "FAIL"
+        result["realized_outcome"] = False
         result["target_hit_first"] = False
         result["stop_hit_first"] = True
         result["neither_hit"] = False
+        resolution_time = stop_hit_time
     else:
-        # Neither hit - EXPIRED
+        # Neither hit - EXPIRED (counts as FAILURE for calibration)
         result["outcome"] = "EXPIRED"
+        result["realized_outcome"] = False  # Expired = not a success
         result["target_hit_first"] = False
         result["stop_hit_first"] = False
         result["neither_hit"] = True
+        # Resolution time = end of horizon window
+        if forward_candles:
+            resolution_time = forward_candles[-1]["time"]
+    
+    # Calculate time_to_resolution (seconds from issue to resolution)
+    issue_time = opportunity["time"]
+    if resolution_time is not None:
+        time_delta = resolution_time - issue_time
+        result["time_to_resolution"] = time_delta.total_seconds()
+    else:
+        result["time_to_resolution"] = None
     
     result["debug_json"]["target_hit_time"] = str(target_hit_time) if target_hit_time else None
     result["debug_json"]["stop_hit_time"] = str(stop_hit_time) if stop_hit_time else None
+    result["debug_json"]["resolution_time"] = str(resolution_time) if resolution_time else None
     
     logger.info(
         f"Evaluated {opportunity['ticker']} ({opportunity['horizon']}): "

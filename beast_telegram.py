@@ -54,19 +54,28 @@ class BeastTelegramBot:
         """Comando /start"""
         welcome = """
 🤖 BEAST TRADING ASSISTANT
+   Entiendo Español e Inglés
 
 Soy tu asistente de trading. Preguntame lo que quieras:
 
-COMANDOS:
-  "analiza SPY" - Analisis completo
-  "flow QQQ" - Flow de opciones
-  "SPY put 690" - Probabilidad de strike
-  "precio TSLA" - Precio actual
+📊 ANALISIS:
+  "analiza SPY" / "check QQQ"
+  "como esta TSLA" / "revisa NVDA"
+
+📈 OPCIONES:
+  "SPY put 690" / "llegara a 688?"
+  "flow QQQ" / "opciones AAPL"
+
+💰 PRECIO:
+  "precio SPY" / "cuanto esta TSLA"
+
+🔮 DIRECCION:
+  "va a subir?" / "sube o baja?"
   
-ALERTAS:
-  /alerts on - Activar alertas automaticas
-  /alerts off - Desactivar alertas
-  /status - Ver estado del sistema
+⚙️ COMANDOS:
+  /alerts on - Alertas automaticas
+  /alerts off - Solo chat
+  /status - Estado del sistema
 
 Las alertas SOLO se envian cuando:
 ✅ Tecnicos alineados
@@ -74,7 +83,7 @@ Las alertas SOLO se envian cuando:
 ✅ Score > 7/10
 ✅ Confianza > 80%
 
-Preguntame algo!
+Preguntame algo! 🚀
 """
         await update.message.reply_text(welcome)
     

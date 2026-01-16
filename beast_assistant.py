@@ -341,15 +341,28 @@ class BeastAssistant:
         return 100 - (100 / (1 + rs))
     
     def process_query(self, query: str) -> str:
-        """Procesa una pregunta en lenguaje natural"""
-        query = query.lower().strip()
+        """Procesa una pregunta en lenguaje natural (Español e Inglés)"""
+        query_lower = query.lower().strip()
         
         # Detectar simbolo
         symbols = re.findall(r'\b([A-Za-z]{1,5})\b', query.upper())
-        common_words = {'A', 'I', 'THE', 'TO', 'FOR', 'AND', 'OR', 'IF', 'MY', 'ME', 
-                       'IT', 'IS', 'AT', 'ON', 'IN', 'UP', 'DO', 'GO', 'NO', 'SO',
-                       'PUT', 'CALL', 'WILL', 'CAN', 'HOW', 'WHAT', 'CHECK', 'ANALYZE',
-                       'NEED', 'MAKE', 'GET', 'BUY', 'SELL', 'FLOW', 'PRICE', 'TARGET'}
+        # Palabras comunes en español e inglés que NO son símbolos
+        common_words = {
+            # English
+            'A', 'I', 'THE', 'TO', 'FOR', 'AND', 'OR', 'IF', 'MY', 'ME', 
+            'IT', 'IS', 'AT', 'ON', 'IN', 'UP', 'DO', 'GO', 'NO', 'SO',
+            'PUT', 'CALL', 'WILL', 'CAN', 'HOW', 'WHAT', 'CHECK', 'ANALYZE',
+            'NEED', 'MAKE', 'GET', 'BUY', 'SELL', 'FLOW', 'PRICE', 'TARGET',
+            # Español
+            'EL', 'LA', 'LOS', 'LAS', 'UN', 'UNA', 'DE', 'EN', 'QUE', 'Y',
+            'ES', 'SE', 'CON', 'POR', 'PARA', 'SU', 'AL', 'DEL', 'SI', 'NO',
+            'COMO', 'MAS', 'PERO', 'SUS', 'LE', 'YA', 'O', 'ESTE', 'HA',
+            'MI', 'ME', 'SIN', 'SOBRE', 'TODO', 'ESTA', 'ENTRE', 'CUANDO',
+            'MUY', 'SER', 'HAY', 'PUEDE', 'TODOS', 'ASI', 'NOS', 'OTROS',
+            'VA', 'IR', 'VER', 'DAR', 'BIEN', 'VAS', 'DIME', 'DAME',
+            'ANALIZA', 'CHECA', 'REVISA', 'PRECIO', 'CUANTO', 'DONDE',
+            'LLEGARA', 'SUBIRA', 'BAJARA', 'OPCIONES', 'AYUDA', 'OF', 'THE'
+        }
         symbols = [s for s in symbols if s not in common_words and len(s) >= 2]
         
         symbol = symbols[0] if symbols else 'SPY'
@@ -358,70 +371,100 @@ class BeastAssistant:
         strikes = re.findall(r'\b(\d{2,4}(?:\.\d{1,2})?)\b', query)
         strike = float(strikes[0]) if strikes else None
         
-        # Detectar tipo de opcion
-        is_put = 'put' in query
-        is_call = 'call' in query
+        # Detectar tipo de opcion (español e inglés)
+        is_put = any(w in query_lower for w in ['put', 'puts', 'baja', 'bajar', 'bajara', 'caer', 'caera'])
+        is_call = any(w in query_lower for w in ['call', 'calls', 'sube', 'subir', 'subira', 'arriba'])
         
-        # Comandos
-        if any(w in query for w in ['flow', 'opciones', 'options', 'wall', 'pain']):
+        # === COMANDOS ===
+        
+        # FLOW / OPCIONES
+        if any(w in query_lower for w in ['flow', 'opciones', 'options', 'wall', 'pain', 
+                                           'calls', 'puts', 'volumen de opciones']):
             return self.get_flow_analysis(symbol)
         
+        # STRIKE ESPECÍFICO
         elif strike and (is_put or is_call):
             opt_type = 'put' if is_put else 'call'
             return self.analyze_option_target(symbol, strike, opt_type)
         
-        elif any(w in query for w in ['llegara', 'will it', 'make it', 'target', 'reach']):
+        # LLEGARÁ A X?
+        elif any(w in query_lower for w in ['llegara', 'llegará', 'will it', 'make it', 
+                                             'target', 'reach', 'tocara', 'tocará',
+                                             'alcanzara', 'alcanzará', 'puede llegar']):
             if strike:
-                opt_type = 'put' if strike < 700 else 'call'  # Heuristica
+                # Heuristica: si el strike es menor al precio típico, es put
+                opt_type = 'put' if is_put or strike < 500 else 'call'
                 return self.analyze_option_target(symbol, strike, opt_type)
             else:
                 return self.analyze_symbol(symbol)
         
-        elif any(w in query for w in ['analiza', 'analyze', 'check', 'como esta', 'how is']):
+        # ANÁLISIS
+        elif any(w in query_lower for w in ['analiza', 'analyze', 'check', 'checa', 'checar',
+                                             'como esta', 'cómo está', 'how is', 'revisa',
+                                             'revisar', 'dime de', 'que opinas', 'qué opinas',
+                                             'analisis', 'análisis', 'escanea', 'scan']):
             return self.analyze_symbol(symbol)
         
-        elif any(w in query for w in ['precio', 'price', 'cuanto', 'how much']):
+        # PRECIO
+        elif any(w in query_lower for w in ['precio', 'price', 'cuanto', 'cuánto', 
+                                             'how much', 'a cuanto', 'a cuánto', 
+                                             'en cuanto', 'cotiza']):
             df = self.get_price_data(symbol, 10)
             if not df.empty:
                 price = df['close'].iloc[-1]
                 return f"{symbol}: ${price:.2f}"
             return f"No pude obtener precio de {symbol}"
         
-        elif any(w in query for w in ['ayuda', 'help', 'comandos', 'commands']):
+        # DIRECCIÓN
+        elif any(w in query_lower for w in ['va a subir', 'va a bajar', 'sube o baja',
+                                             'up or down', 'going up', 'going down',
+                                             'direccion', 'dirección', 'tendencia']):
+            return self.analyze_symbol(symbol)
+        
+        # AYUDA
+        elif any(w in query_lower for w in ['ayuda', 'help', 'comandos', 'commands',
+                                             'que puedes', 'qué puedes', 'opciones',
+                                             'como funciona', 'cómo funciona']):
             return self.get_help()
         
+        # DEFAULT: analisis
         else:
-            # Default: analisis
             return self.analyze_symbol(symbol)
     
     def get_help(self) -> str:
         return """
 ==================================================
   BEAST ASSISTANT - COMANDOS
+  (Entiende Espanol e Ingles)
 ==================================================
 
-  ANALISIS:
-    "analiza SPY"
-    "check TSLA"
-    "como esta QQQ"
+  ANALISIS / ANALYSIS:
+    "analiza SPY"      |  "analyze SPY"
+    "checa TSLA"       |  "check TSLA"
+    "como esta QQQ"    |  "how is QQQ"
+    "revisa AAPL"      |  "scan NVDA"
     
-  OPCIONES TARGET:
+  OPCIONES / OPTIONS TARGET:
     "SPY put 690"
-    "llegara a 690?"
-    "will my 690 puts print?"
+    "llegara a 690?"   |  "will it reach 690?"
+    "bajara a 688?"    |  "tocara 695?"
+    "TSLA call 150"
     
-  FLOW:
-    "flow SPY"
-    "opciones de AAPL"
-    "call wall TSLA"
+  FLOW DE OPCIONES:
+    "flow SPY"         |  "opciones QQQ"
+    "call wall TSLA"   |  "put wall SPY"
     
-  PRECIO:
-    "precio SPY"
-    "cuanto esta NVDA"
+  PRECIO / PRICE:
+    "precio SPY"       |  "price of TSLA"
+    "cuanto esta NVDA" |  "a cuanto cotiza QQQ"
+    
+  DIRECCION:
+    "va a subir SPY?"  |  "tendencia de QQQ"
+    "sube o baja?"     |  "up or down?"
     
   OTROS:
-    "ayuda" - Este mensaje
-    "salir" - Terminar
+    "ayuda" / "help" - Este mensaje
+    "salir" / "exit" - Terminar (solo CLI)
 
 ==================================================
 """

@@ -16,9 +16,10 @@ lightgbm>=4.0.0
 joblib>=1.3.0
 
 # Technical Analysis
-pandas-ta>=0.3.14b
-# TA-Lib (optional, install separately if needed)
-# talib>=0.4.0
+ta>=0.11.0
+# pandas-ta and TA-Lib are optional
+# pip install pandas-ta  (if available)
+# pip install TA-Lib (requires C library)
 
 # Market Data
 alpaca-py>=0.21.0
@@ -35,6 +36,12 @@ python-dotenv>=1.0.0
 # Logging & Utilities
 colorama>=0.4.6
 tqdm>=4.66.0
+
+# Telegram Bot
+python-telegram-bot>=20.0
+
+# Timezone
+pytz>=2023.0
 
 # For Jetson GPU acceleration (optional)
 # Install NVIDIA's JetPack-compatible packages separately:

@@ -1,0 +1,84 @@
+# ============================================
+# BEAST ENGINE - Docker Compose
+# ============================================
+# THE ULTIMATE 0DTE TRADING INTELLIGENCE
+# ============================================
+
+version: '3.8'
+
+services:
+  # ==========================================
+  # BEAST ENGINE - The main trading engine
+  # ==========================================
+  beast:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: beast-engine
+    restart: unless-stopped
+    
+    # Enable GPU access on Jetson
+    runtime: nvidia
+    
+    # Environment variables
+    environment:
+      - TZ=America/New_York
+      - NVIDIA_VISIBLE_DEVICES=all
+      - ALPACA_API_KEY=${ALPACA_API_KEY:-}
+      - ALPACA_API_SECRET=${ALPACA_API_SECRET:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    
+    # Mount configuration and logs
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    
+    # Network
+    networks:
+      - beast-network
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    
+    # Resource limits (for Jetson Orin AGX 64GB)
+    deploy:
+      resources:
+        limits:
+          memory: 32G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ==========================================
+  # REDIS - Fast in-memory data store
+  # (For signal caching and pub/sub)
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: beast-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - beast-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  beast-network:
+    driver: bridge
+
+volumes:
+  redis-data:

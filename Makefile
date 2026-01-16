@@ -1,95 +1,76 @@
-.PHONY: help up down logs psql redis-cli clean restart status configure-grafana
+# ============================================
+# BEAST ENGINE - Makefile
+# ============================================
+# THE ULTIMATE 0DTE TRADING INTELLIGENCE
+# ============================================
+
+.PHONY: help install run scan query brief docker-build docker-up docker-down docker-logs clean test
 
 # Default target
 help:
-	@echo "ZERO Trading Intelligence Platform - Makefile"
 	@echo ""
-	@echo "Available commands:"
-	@echo "  make up          - Start all services"
-	@echo "  make down        - Stop all services"
-	@echo "  make logs        - View logs from all services"
-	@echo "  make psql        - Connect to TimescaleDB via psql"
-	@echo "  make redis-cli    - Connect to Redis via redis-cli"
-	@echo "  make restart     - Restart all services"
-	@echo "  make status      - Show service status"
-	@echo "  make clean       - Remove all containers, volumes, and data (Irreversible - Deletes NVMe Data)"
-	@echo "  make configure-grafana - Configure Grafana datasource with database password"
+	@echo "  🦁 BEAST ENGINE - Commands"
+	@echo "  =========================="
+	@echo ""
+	@echo "  make install    - Install Python dependencies"
+	@echo "  make run        - Run continuous scanning"
+	@echo "  make scan       - Single market scan"
+	@echo "  make query S=SPY - Query specific symbol"
+	@echo "  make brief      - Send morning brief"
+	@echo ""
+	@echo "  Docker Commands:"
+	@echo "  make docker-build - Build Docker image"
+	@echo "  make docker-up    - Start containers"
+	@echo "  make docker-down  - Stop containers"
+	@echo "  make docker-logs  - View logs"
+	@echo ""
+	@echo "  make clean      - Clean logs and cache"
+	@echo "  make test       - Test the engine"
 	@echo ""
 
-# Start all services
-up:
-	@echo "Starting ZERO platform services..."
-	docker compose --env-file .env -f infra/docker-compose.yml up -d
-	@echo "Services started. Waiting for health checks..."
-	@sleep 5
-	@make status
+# Install dependencies
+install:
+	pip install -r requirements.txt
 
-# Stop all services
-down:
-	@echo "Stopping ZERO platform services..."
-	docker compose --env-file .env -f infra/docker-compose.yml down
+# Run continuous scanning
+run:
+	python beast_engine.py
 
-# View logs
-logs:
-	docker compose --env-file .env -f infra/docker-compose.yml logs -f
+# Single scan
+scan:
+	python beast_engine.py scan
 
-# Connect to TimescaleDB
-psql:
-	@echo "Connecting to TimescaleDB..."
-	@echo "Database: zero_trading"
-	@echo "User: zero_user"
-	@echo ""
-	docker compose --env-file .env -f infra/docker-compose.yml exec timescaledb psql -U zero_user -d zero_trading
+# Query specific symbol (usage: make query S=SPY)
+query:
+	python beast_engine.py query $(S)
 
-# Connect to Redis
-redis-cli:
-	@echo "Connecting to Redis..."
-	docker compose --env-file .env -f infra/docker-compose.yml exec redis redis-cli
+# Send morning brief
+brief:
+	python beast_engine.py brief
 
-# Restart all services
-restart:
-	@echo "Restarting ZERO platform services..."
-	docker compose --env-file .env -f infra/docker-compose.yml restart
-	@make status
+# Docker commands
+docker-build:
+	docker compose build
 
-# Show service status
-status:
-	@echo "Service Status:"
-	@echo "==============="
-	docker compose --env-file .env -f infra/docker-compose.yml ps
-	@echo ""
-	@echo "Health Checks:"
-	@echo "=============="
-	@docker compose --env-file .env -f infra/docker-compose.yml ps --format json | grep -o '"Health":"[^"]*"' || echo "No health status available"
+docker-up:
+	docker compose up -d
 
-# Clean everything (WARNING: removes all data)
+docker-down:
+	docker compose down
+
+docker-logs:
+	docker compose logs -f beast
+
+# Clean logs and cache
 clean:
-	@echo "WARNING: This will remove all containers, volumes, and data!"
-	@echo "IRREVERSIBLE - Deletes NVMe Data in ./data_nvme/"
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker compose --env-file .env -f infra/docker-compose.yml down -v; \
-		rm -rf data_nvme/*; \
-		echo "Cleaned."; \
-	else \
-		echo "Cancelled."; \
-	fi
+	rm -rf logs/*.log
+	rm -rf __pycache__
+	rm -rf .pytest_cache
 
-# Validate init.sql (syntax check)
-validate-sql:
-	@echo "Validating init.sql syntax..."
-	@docker compose --env-file .env -f infra/docker-compose.yml run --rm timescaledb psql -U zero_user -d zero_trading -f /docker-entrypoint-initdb.d/init.sql --dry-run || echo "Note: Dry-run may not work, but SQL will be validated on first run"
-
-# Initialize database schema (run if tables are missing)
-init-db:
-	@echo "Initializing database schema..."
-	@docker compose --env-file .env -f infra/docker-compose.yml exec timescaledb sh -c 'psql -U zero_user -d zero_trading -f /docker-entrypoint-initdb.d/init.sql' || \
-		(echo "⚠️  Note: If database already initialized, some errors are expected (tables may already exist)" && exit 0)
-	@echo "✅ Database schema initialization completed"
-
-# Configure Grafana datasource
-configure-grafana:
-	@echo "Configuring Grafana TimescaleDB datasource..."
-	@python3 scripts/configure_grafana.py || \
-		(echo "⚠️  Make sure Grafana is running and .env file has POSTGRES_PASSWORD set" && exit 1)
+# Test the engine
+test:
+	python -c "from beast_engine import BeastEngine, Config; print('✅ Import OK')"
+	python -c "import pandas; import numpy; import joblib; print('✅ Dependencies OK')"
+	python -c "import alpaca; print('✅ Alpaca OK')"
+	@echo ""
+	@echo "🦁 All tests passed!"

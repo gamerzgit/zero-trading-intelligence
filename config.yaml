@@ -1,0 +1,155 @@
+# ============================================
+# BEAST ENGINE - Configuration
+# ============================================
+# THE ULTIMATE 0DTE TRADING INTELLIGENCE
+# ============================================
+
+# ALPACA API CREDENTIALS
+alpaca:
+  api_key: "PKNHK3I3RC535JHNLU62GBNAAW"
+  api_secret: "B13iS1JMFto6xNwpkne4gvTnAXtMTzN8Vqg7CMMMihrs"
+  paper: true
+  base_url: "https://paper-api.alpaca.markets"
+
+# TELEGRAM NOTIFICATIONS
+telegram:
+  bot_token: "7470838698:AAEcjDiEOAgl1nnzmvi8u3qNGgCa9HVuSZo"
+  chat_id: "6339732953"
+
+# TRADING PARAMETERS
+trading:
+  min_quality_score: 18      # Minimum quality to trade (0-100)
+  min_strength_score: 6      # Minimum strength (0-10)
+  min_confidence: 65.0       # Minimum AI confidence %
+  max_daily_trades: 10       # Max trades per day
+  position_size_percent: 10  # % of account per trade
+
+# VIX THRESHOLDS (Market Regime)
+vix:
+  green_max: 18.0    # GREEN: Full risk-on
+  yellow_max: 25.0   # YELLOW: Caution
+  # Above 25 = RED: No new trades
+
+# TIME WINDOWS
+time:
+  orb_minutes: 15          # Opening Range Breakout window
+  power_hour_start: 15     # 3 PM ET
+  cutoff_hour: 15          # No new trades after
+  cutoff_minute: 30        # 3:30 PM ET
+
+# SCANNER SETTINGS
+scanner:
+  interval_seconds: 60     # Scan every 60 seconds
+  max_symbols: 100         # Maximum symbols to scan
+
+# UNIVERSE - Symbols to scan
+universe:
+  # Core Indices (highest liquidity 0DTE options)
+  indices:
+    - SPY   # S&P 500 ETF
+    - QQQ   # Nasdaq 100 ETF
+    - IWM   # Russell 2000 ETF
+    - DIA   # Dow Jones ETF
+  
+  # Tech Giants
+  tech:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - META
+    - NVDA
+    - TSLA
+    - AMD
+    - NFLX
+    - INTC
+  
+  # Finance
+  finance:
+    - JPM
+    - BAC
+    - GS
+    - MS
+    - C
+    - WFC
+  
+  # Energy
+  energy:
+    - XOM
+    - CVX
+    - OXY
+  
+  # Healthcare
+  healthcare:
+    - UNH
+    - JNJ
+    - PFE
+    - MRNA
+    - LLY
+  
+  # Consumer
+  consumer:
+    - WMT
+    - HD
+    - NKE
+    - MCD
+    - SBUX
+    - TGT
+    - COST
+  
+  # Other High Volume
+  other:
+    - BA
+    - CAT
+    - DIS
+    - V
+    - MA
+    - PYPL
+    - SQ
+    - COIN
+  
+  # High Volatility / Momentum
+  momentum:
+    - GME
+    - AMC
+    - PLTR
+    - SOFI
+    - RIVN
+    - LCID
+    - MARA
+    - RIOT
+
+# AI MODEL SETTINGS
+ai:
+  model_0dte_path: "models/ai_0dte_model.pkl"
+  model_ensemble_path: "models/ai_ensemble.pkl"
+  model_swing_path: "models/ai_swing_model.pkl"
+  
+  # Ensemble weights
+  weights:
+    random_forest: 0.35
+    xgboost: 0.35
+    lightgbm: 0.30
+
+# RISK MANAGEMENT
+risk:
+  max_loss_per_trade: 500     # Max $ loss per trade
+  stop_atr_multiplier: 1.0    # Stop = ATR * this
+  target_atr_multiplier: 2.0  # Target = ATR * this
+  trailing_stop: false        # Enable trailing stop
+
+# LOGGING
+logging:
+  level: "INFO"
+  log_dir: "logs"
+  console_verbose: true
+  show_reasoning: true
+
+# SIGNAL TYPES (ordered by priority)
+signal_priority:
+  - POWER_HOUR      # Highest priority - 3-4 PM
+  - ORB_BREAKOUT    # Opening Range Breakout
+  - CAPITULATION    # Extreme reversals
+  - TRAP            # Bull/Bear traps
+  - EARLY_WARNING   # Divergences
+  - REGULAR         # Standard signals

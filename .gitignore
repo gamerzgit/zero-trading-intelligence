@@ -72,14 +72,20 @@ docker-compose.override.yml
 # ============================================================================
 # Models & Cache
 # ============================================================================
-models/
-*.pkl
+# Keep models/ in git - they are required for the engine
+# models/
+# *.pkl
 *.joblib
 *.h5
 *.onnx
 *.trt
 cache/
 .cache/
+
+# ============================================================================
+# Config with secrets (use config.yaml.example as template)
+# ============================================================================
+# config.yaml  # Uncomment this line in production to exclude secrets
 
 # ============================================================================
 # Temporary Files

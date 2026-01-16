@@ -4,7 +4,7 @@
 # THE ULTIMATE 0DTE TRADING INTELLIGENCE
 # ============================================
 
-.PHONY: help install run scan query brief docker-build docker-up docker-down docker-logs clean test
+.PHONY: help install run scan query brief patterns docker-build docker-up docker-down docker-logs clean test train train-quick train-full
 
 # Default target
 help:
@@ -17,6 +17,7 @@ help:
 	@echo "  make scan       - Single market scan"
 	@echo "  make query S=SPY - Query specific symbol"
 	@echo "  make brief      - Send morning brief"
+	@echo "  make patterns   - Scan for chart patterns"
 	@echo ""
 	@echo "  AI Training:"
 	@echo "  make train      - Retrain models (60 days data)"
@@ -52,6 +53,10 @@ query:
 # Send morning brief
 brief:
 	python beast_engine.py brief
+
+# Scan for chart patterns
+patterns:
+	python beast_engine.py patterns
 
 # Docker commands
 docker-build:

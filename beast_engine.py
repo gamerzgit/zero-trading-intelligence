@@ -1639,6 +1639,30 @@ async def main():
             # Send morning brief
             await engine.send_morning_brief()
         
+        elif command == "patterns":
+            # Run pattern scanner
+            from pattern_scanner import PatternScanner
+            scanner = PatternScanner(yaml.safe_load(open("config.yaml")))
+            
+            # Quick scan (top 50 stocks)
+            symbols = scanner._get_fallback_universe()[:50]
+            all_patterns = []
+            
+            print(f"\nScanning {len(symbols)} stocks for chart patterns...")
+            
+            for symbol in symbols:
+                df = await scanner.fetch_data(symbol, days=5)
+                if not df.empty:
+                    patterns = await scanner.scan_symbol(symbol, df)
+                    all_patterns.extend(patterns)
+            
+            # Sort by confidence
+            all_patterns.sort(key=lambda p: p.confidence, reverse=True)
+            
+            # Display results
+            results = scanner.format_scan_results(all_patterns[:20])
+            print(results)
+        
         else:
             print(f"Unknown command: {command}")
             print("Usage:")
@@ -1646,6 +1670,7 @@ async def main():
             print("  python beast_engine.py scan      # Single scan")
             print("  python beast_engine.py query SPY # Query specific symbol")
             print("  python beast_engine.py brief     # Send morning brief")
+            print("  python beast_engine.py patterns  # Scan for chart patterns")
     else:
         # Run continuous scanning
         await engine.run()

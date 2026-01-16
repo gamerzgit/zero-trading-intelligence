@@ -9,7 +9,7 @@
 # Default target
 help:
 	@echo ""
-	@echo "  🦁 BEAST ENGINE - Commands"
+	@echo "  BEAST ENGINE - Commands"
 	@echo "  =========================="
 	@echo ""
 	@echo "  make install    - Install Python dependencies"
@@ -17,6 +17,11 @@ help:
 	@echo "  make scan       - Single market scan"
 	@echo "  make query S=SPY - Query specific symbol"
 	@echo "  make brief      - Send morning brief"
+	@echo ""
+	@echo "  AI Training:"
+	@echo "  make train      - Retrain models (60 days data)"
+	@echo "  make train-quick - Quick retrain (30 days)"
+	@echo "  make train-full - Full retrain (1 year)"
 	@echo ""
 	@echo "  Docker Commands:"
 	@echo "  make docker-build - Build Docker image"
@@ -60,6 +65,16 @@ docker-down:
 
 docker-logs:
 	docker compose logs -f beast
+
+# Train/Retrain AI models with fresh data
+train:
+	python train_models.py --days 60
+
+train-quick:
+	python train_models.py --days 30
+
+train-full:
+	python train_models.py --days 365
 
 # Clean logs and cache
 clean:

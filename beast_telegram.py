@@ -39,8 +39,13 @@ class BeastTelegramBot:
             self.config = yaml.safe_load(f)
         
         self.assistant = BeastAssistant()
-        self.chat_id = self.config['notifications']['telegram']['chat_id']
-        self.token = self.config['notifications']['telegram']['bot_token']
+        # Support both config formats
+        if 'notifications' in self.config:
+            self.chat_id = self.config['notifications']['telegram']['chat_id']
+            self.token = self.config['notifications']['telegram']['bot_token']
+        else:
+            self.chat_id = self.config['telegram']['chat_id']
+            self.token = self.config['telegram']['bot_token']
         
         # Control de alertas
         self.last_alert = {}  # symbol -> timestamp

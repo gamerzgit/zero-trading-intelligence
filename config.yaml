@@ -13,7 +13,7 @@ alpaca:
 
 # TELEGRAM NOTIFICATIONS
 telegram:
-  bot_token: "7470838698:AAEcjDiEOAgl1nnzmvi8u3qNGgCa9HVuSZo"
+  bot_token: "8105615891:AAFXjWXD7ZGvSnMDaWCQbLGO1yyyI_XUQQo"
   chat_id: "6339732953"
 
 # TRADING PARAMETERS
